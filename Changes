@@ -1,0 +1,10 @@
+Revision history for Perl extension Net::SSH2.
+
+Developer/maintainer: David B. Robins <dbrobins@cpan.org>.
+Project started 2005-10-23 in Redmond, Washington, USA.
+
+0.01  2005-11-01  dbr
+        - First alpha release with full SSH2/SFTP support (uses libSSH2).
+        - Original version; created by h2xs 1.23 with options
+            -A -n Net::SSH2 -b 5.8.0.
+
