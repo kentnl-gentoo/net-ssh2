@@ -50,8 +50,16 @@ sub WRITE {
 sub READLINE {
     my $self = shift;
     return if $self->eof;
+
+    if (wantarray) {
+        my @lines;
+        my $line;
+        push @lines, $line while defined($line = $self->READLINE);
+        return @lines;
+    }
+    
     my ($line, $eol, $c) = ('', $/);
-    $line .= $c while defined($c = $self->GETC) and $line !~ /\Q$eol\E$/;
+    $line .= $c while $line !~ /\Q$eol\E$/ and defined($c = $self->GETC);
     length($line) ? $line : undef
 }
 

@@ -31,10 +31,12 @@ O_SFTP
 O_FILE
     GV* gv = (GV*)SvREFCNT_inc(newSVrv($arg, "Net::SSH2::File"));
     IO* io = (IO*)newSV(0);
+    const char* name = form("_GEN_%ld", (long)net_fi_gensym++);
     SvUPGRADE((SV*)gv, SVt_PVGV);
     SvUPGRADE((SV*)io, SVt_PVIO);
     SvIVX(gv) = PTR2IV($var);
-    gv_init(gv, 0, "", 0, 0);
+    gv_init(gv, gv_stashpv("Net::SSH2::File", 0/*create*/),
+     name, strlen(name), 0/*multi*/);
     GvIOp(gv) = io;
     sv_magic((SV*)io, $arg, PERL_MAGIC_tiedscalar, Nullch, 0);
 

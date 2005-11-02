@@ -190,7 +190,7 @@ our %EXPORT_TAGS = (
 
 our @EXPORT_OK = @{$EXPORT_TAGS{all}};
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 
 # methods
@@ -461,7 +461,10 @@ Net::SSH2 - Support for the SSH 2 protocol via libSSH2.
 
   if ($ssh2->auth_keyboard('fizban')) {
       my $chan = $ssh2->channel();
-      $chan->exec('ls');
+      my $sftp = $ssh2->sftp;
+
+      my $fh = $sftp->open('/etc/passwd') or die;
+      print $_ while <$fh>;
   }
 
 =head1 DESCRIPTION
@@ -844,6 +847,9 @@ the integer value.
 Returns undef on error, or the number of active objects.
 
 =head1 SEE ALSO
+
+L<Net::SSH2::Channel>, L<Net::SSH2::Listener>,
+L<Net::SSH2::SFTP>, L<Net::SSH2::File>, L<Net::SSH2::Dir>.
 
 LibSSH2 documentation at L<http://www.libssh2.org>.
 

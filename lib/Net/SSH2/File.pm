@@ -7,6 +7,61 @@ use Carp;
 
 # methods
 
+# tie interface
+
+sub PRINT {
+    my $self = shift;
+    $self->write(join $,, @_)
+}
+
+sub PRINTF {
+    my $self = shift;
+    $self->write(sprintf @_)
+}
+
+sub WRITE {
+    my ($self, $buf, $len, $offset) = @_;
+    $self->write(substr($buf, $offset, $len))
+}
+
+sub READLINE {
+    my $self = shift;
+
+    if (wantarray) {
+        my @lines;
+        my $line;
+        push @lines, $line while defined($line = $self->READLINE);
+        return @lines;
+    }
+    
+    my ($line, $eol, $c) = ('', $/);
+    $line .= $c while $line !~ /\Q$eol\E$/ and defined($c = $self->GETC);
+    length($line) ? $line : undef
+}
+
+sub GETC {
+    my $self = shift;
+    my $buf;
+    $self->read($buf, 1) ? $buf : undef
+}
+
+sub READ {
+    my ($self, $rbuf, $len, $offset) = @_;
+    my ($tmp, $count);
+    return unless defined($count = $self->read($tmp, $len));
+    substr($$rbuf, $offset) = $tmp;
+    $count
+}
+
+sub CLOSE {
+}
+
+sub BINMODE {
+}
+
+sub EOF {
+    0
+}
 
 1;
 __END__

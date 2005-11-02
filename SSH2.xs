@@ -143,19 +143,20 @@ typedef struct SSH2_LISTENER {
 
 /* Net::SSH2::File object */
 typedef struct SSH2_FILE {
-    SSH2* ss;
-    SV* sv_ss;
+    SSH2_SFTP* sf;
+    SV* sv_sf;
     LIBSSH2_SFTP_HANDLE* handle;
 } SSH2_FILE;
 
 /* Net::SSH2::Dir object */
 typedef struct SSH2_DIR {
-    SSH2* ss;
-    SV* sv_ss;
+    SSH2_SFTP* sf;
+    SV* sv_sf;
     LIBSSH2_SFTP_HANDLE* handle;
 } SSH2_DIR;
 
 static unsigned long net_ch_gensym = 0;
+static unsigned long net_fi_gensym = 0;
 
 /* set Net:SSH2-specific error message */
 static void set_error(SSH2* ss, int errcode, const char* errmsg) {
@@ -274,35 +275,35 @@ int return_attrs(SV** sp, LIBSSH2_SFTP_ATTRIBUTES* attrs, SV* name) {
 }
 
 /* general wrapper */
-#define NEW_ITEM(type, field, create) do { \
+#define NEW_ITEM(type, field, create, parent) do { \
     Newz(0/*id*/, RETVAL, 1, type); \
     if (RETVAL) { \
-        RETVAL->ss = ss; \
-        RETVAL->sv_ss = SvREFCNT_inc(SvRV(ST(0))); \
+        RETVAL->parent = parent; \
+        RETVAL->sv_##parent = SvREFCNT_inc(SvRV(ST(0))); \
         RETVAL->field = create; \
     } \
     if (!RETVAL || !RETVAL->field) { \
         if (RETVAL) \
-            SvREFCNT_dec(RETVAL->sv_ss); \
+            SvREFCNT_dec(RETVAL->sv_##parent); \
         Safefree(RETVAL); \
         XSRETURN_EMPTY; \
     } \
 } while(0)
 
 /* wrap a libSSH2 channel */
-#define NEW_CHANNEL(create) NEW_ITEM(SSH2_CHANNEL, channel, create)
+#define NEW_CHANNEL(create) NEW_ITEM(SSH2_CHANNEL, channel, create, ss)
 
 /* wrap a libSSH2 listener */
-#define NEW_LISTENER(create) NEW_ITEM(SSH2_LISTENER, listener, create)
+#define NEW_LISTENER(create) NEW_ITEM(SSH2_LISTENER, listener, create, ss)
 
 /* wrap a libSSH2 SFTP connection */
-#define NEW_SFTP(create) NEW_ITEM(SSH2_SFTP, sftp, create)
+#define NEW_SFTP(create) NEW_ITEM(SSH2_SFTP, sftp, create, ss)
 
 /* wrap a libSSH2 SFTP file */
-#define NEW_FILE(create) NEW_ITEM(SSH2_FILE, handle, create)
+#define NEW_FILE(create) NEW_ITEM(SSH2_FILE, handle, create, sf)
 
 /* wrap a libSSH2 SFTP connection */
-#define NEW_DIR(create) NEW_ITEM(SSH2_DIR, handle, create)
+#define NEW_DIR(create) NEW_ITEM(SSH2_DIR, handle, create, sf)
 
 /* callback for returning a password via "keyboard-interactive" auth */
 static LIBSSH2_USERAUTH_KBDINT_RESPONSE_FUNC(cb_kbdint_response_password) {
@@ -1295,9 +1296,8 @@ PREINIT:
     long l_flags = 0;
     const char* pv_file;
     STRLEN len_file;
-    SSH2* ss;
 CODE:
-    clear_error(ss = sf->ss);
+    clear_error(sf->ss);
     pv_file = SvPV(file, len_file);
     
     /* map POSIX O_* to LIBSSH2_FXF_* (can't assume they're the same) */
@@ -1323,9 +1323,8 @@ net_sf_opendir(SSH2_SFTP* sf, SV* dir)
 PREINIT:
     const char* pv_dir;
     STRLEN len_dir;
-    SSH2* ss;
 CODE:
-    clear_error(ss = sf->ss);
+    clear_error(sf->ss);
     pv_dir = SvPV(dir, len_dir);
     NEW_DIR(libssh2_sftp_open_ex(sf->sftp, (char*)pv_dir, len_dir,
      0/*flags*/, 0/*mode*/, LIBSSH2_SFTP_OPENDIR));
@@ -1501,9 +1500,9 @@ void
 net_fi_DESTROY(SSH2_FILE* fi)
 CODE:
     debug("%s::DESTROY\n", class);
-    clear_error(fi->ss);
+    clear_error(fi->sf->ss);
     libssh2_sftp_close_handle(fi->handle);
-    SvREFCNT_dec(fi->sv_ss);
+    SvREFCNT_dec(fi->sv_sf);
     Safefree(fi);
 
 void
@@ -1512,7 +1511,7 @@ PREINIT:
     char* pv_buffer;
     int count;
 CODE:
-    clear_error(fi->ss);
+    clear_error(fi->sf->ss);
     SvPOK_on(buffer);
     pv_buffer = sv_grow(buffer, size + 1/*NUL*/);  /* force PV */
     pv_buffer[size] = '\0';
@@ -1532,7 +1531,7 @@ PREINIT:
     STRLEN len_buffer;
     size_t count;
 CODE:
-    clear_error(fi->ss);
+    clear_error(fi->sf->ss);
     pv_buffer = SvPV(buffer, len_buffer);
     count = libssh2_sftp_write(fi->handle, pv_buffer, len_buffer);
     if (count < 0)
@@ -1545,7 +1544,7 @@ PREINIT:
     int success;
     LIBSSH2_SFTP_ATTRIBUTES attrs;
 PPCODE:
-    clear_error(fi->ss);
+    clear_error(fi->sf->ss);
     if (libssh2_sftp_fstat(fi->handle, &attrs))
         XSRETURN_EMPTY;
     XSRETURN_ATTRS(NULL/*name*/);
@@ -1556,7 +1555,7 @@ PREINIT:
     LIBSSH2_SFTP_ATTRIBUTES attrs;
     int i;
 CODE:
-    clear_error(fi->ss);
+    clear_error(fi->sf->ss);
     Zero(&attrs, 1, LIBSSH2_SFTP_ATTRIBUTES);
 
     /* read key/value pairs; cf. hv_from_attrs */
@@ -1580,14 +1579,14 @@ CODE:
 void
 net_fi_seek(SSH2_FILE* fi, size_t offset)
 CODE:
-    clear_error(fi->ss);
+    clear_error(fi->sf->ss);
     libssh2_sftp_seek(fi->handle, offset);
     XSRETURN(1);
 
 void
 net_fi_tell(SSH2_FILE* fi)
 CODE:
-    clear_error(fi->ss);
+    clear_error(fi->sf->ss);
     XSRETURN_UV(libssh2_sftp_tell(fi->handle));
         
 #undef class
@@ -1602,9 +1601,9 @@ void
 net_di_DESTROY(SSH2_DIR* di)
 CODE:
     debug("%s::DESTROY\n", class);
-    clear_error(di->ss);
+    clear_error(di->sf->ss);
     libssh2_sftp_close_handle(di->handle);
-    SvREFCNT_dec(di->sv_ss);
+    SvREFCNT_dec(di->sv_sf);
     Safefree(di);
 
 void
@@ -1615,7 +1614,7 @@ PREINIT:
     int count;
     LIBSSH2_SFTP_ATTRIBUTES attrs;
 PPCODE:
-    clear_error(di->ss);
+    clear_error(di->sf->ss);
     buffer = newSV(PATH_MAX + 1);
     SvPOK_on(buffer);
     pv_buffer = SvPVX(buffer);
