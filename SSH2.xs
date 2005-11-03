@@ -103,8 +103,10 @@ const char* sftp_error[] = {
 
 #define countof(x) (sizeof(x)/sizeof(*x))
 
+#define XLATEXT (ext ? SSH_EXTENDED_DATA_STDERR : 0)
+
 #define XLATATTR(name, field, flag) \
-    else if (StrEQ(key, name)) { \
+    else if (strEQ(key, name)) { \
         attrs.field = SvUV(ST(i + 1)); \
         attrs.flags |= LIBSSH2_SFTP_ATTR_##flag; \
     }
@@ -866,12 +868,12 @@ OUTPUT:
     RETVAL
 
 SSH2_CHANNEL*
-net_ss_scp_get(SSH2* ss, const char* path, HV* stat = NULL)
+net_ss__scp_get(SSH2* ss, const char* path, HV* stat = NULL)
 PREINIT:
     struct stat st;
 CODE:
     clear_error(ss);
-    NEW_CHANNEL(libssh2_scp_recv(ss->session, path, stat ? &st : NULL));
+    NEW_CHANNEL(libssh2_scp_recv(ss->session, path, &st));
     if (stat) {
         hv_clear(stat);
         hv_store(stat, "mode",  4, newSVuv(st.st_mode),  0/*hash*/);
@@ -885,7 +887,7 @@ OUTPUT:
     RETVAL
 
 SSH2_CHANNEL*
-net_ss_scp_put(SSH2* ss, const char* path, int mode, size_t size, \
+net_ss__scp_put(SSH2* ss, const char* path, int mode, size_t size, \
     long mtime = 0, long atime = 0)
 CODE:
     clear_error(ss);
@@ -1145,8 +1147,7 @@ CODE:
     pv_buffer = sv_grow(buffer, size + 1/*NUL*/);  /* force PV */
 
     again:
-    count = libssh2_channel_read_ex(ch->channel,
-     ext ? SSH_EXTENDED_DATA_STDERR : 0, pv_buffer, size);
+    count = libssh2_channel_read_ex(ch->channel, XLATEXT, pv_buffer, size);
     debug("- read %d bytes\n", count);
 
     if (count < 0) {
@@ -1172,14 +1173,12 @@ CODE:
 void
 net_ch_can_read(SSH2_CHANNEL* ch, int ext = 0)
 CODE:
-    XSRETURN_IV(libssh2_poll_channel_read(ch->channel,
-     ext ? SSH_EXTENDED_DATA_STDERR : 0));
+    XSRETURN_IV(libssh2_poll_channel_read(ch->channel, XLATEXT));
 
 void
 net_ch_can_write(SSH2_CHANNEL* ch, int ext = 0)
 CODE:
-    XSRETURN_IV(libssh2_poll_channel_write(ch->channel,
-     ext ? SSH_EXTENDED_DATA_STDERR : 0));
+    XSRETURN_IV(libssh2_poll_channel_write(ch->channel, XLATEXT));
 
 void
 net_ch_write(SSH2_CHANNEL* ch, SV* buffer, int ext = 0)
@@ -1190,8 +1189,8 @@ PREINIT:
 CODE:
     clear_error(ch->ss);
     pv_buffer = SvPV(buffer, len_buffer);
-    count = libssh2_channel_write_ex(ch->channel,
-     ext ? SSH_EXTENDED_DATA_STDERR : 0, pv_buffer, len_buffer);
+    count = libssh2_channel_write_ex(ch->channel, XLATEXT,
+     pv_buffer, len_buffer);
     if (count < 0)
         XSRETURN_EMPTY;
     XSRETURN_IV(count);
@@ -1202,8 +1201,7 @@ PREINIT:
     int count;
 CODE:
     clear_error(ch->ss);
-    count = libssh2_channel_flush_ex(ch->channel, 
-     ext ? SSH_EXTENDED_DATA_STDERR : 0);
+    count = libssh2_channel_flush_ex(ch->channel, XLATEXT);
     if (count < 0)
         XSRETURN_EMPTY;
     XSRETURN_IV(count);

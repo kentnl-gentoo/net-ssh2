@@ -23,7 +23,7 @@ my $ssh2 = Net::SSH2->new();
 isa_ok($ssh2, 'Net::SSH2', 'new session');
 ok(!$ssh2->error(), 'error state clear');
 ok($ssh2->banner('SSH TEST'), 'set banner');
-is(LIBSSH2_ERROR_SOCKET_NONE, -1, 'LIBSSH2_* constants');
+is(LIBSSH2_ERROR_SOCKET_NONE(), -1, 'LIBSSH2_* constants');
 
 # (4) version
 my $version = $ssh2->version();
@@ -39,7 +39,7 @@ is(Net::SSH2->poll(250), 0, 'poll 1/4 second');
 
 # (1) connect
 SKIP: { # SKIP-connect
-skip '- non-interactive session', 57 unless $host or -t;
+skip '- non-interactive session', 57 unless $host or -t STDOUT;
 $| = 1;
 unless ($host) {
     print <<TEST;
@@ -82,7 +82,7 @@ is_deeply(\@auth, [$ssh2->auth_list($user)], 'list matches comma-separated');
 ok(!$ssh2->auth_ok, 'not authenticated yet');
 
 # (2) authenticate
-my @auth = $pass ? (password => $pass) : (interact => 1);
+@auth = $pass ? (password => $pass) : (interact => 1);
 my $type = $ssh2->auth(username => $user, @auth);
 ok($type, "authenticated via: $type");
 SKIP: { # SKIP-auth
@@ -123,12 +123,12 @@ is($stat{name}, $dir, 'directory name matches');
 
 # (4) SCP
 my $remote = "$dir/".basename($0);
-ok($ssh2->scp_put_file($0, $remote), "put $0 to remote");
+ok($ssh2->scp_put($0, $remote), "put $0 to remote");
 SKIP: { # SKIP-scalar
 eval { require IO::Scalar };
 skip '- IO::Scalar required', 2 if $@;
 my $check = IO::Scalar->new;
-ok($ssh2->scp_get_file($remote, $check), "get $remote from remote");
+ok($ssh2->scp_get($remote, $check), "get $remote from remote");
 SKIP: { # SKIP-slurp
 eval { require File::Slurp };
 skip '- File::Slurp required', 1 if $@;
@@ -141,7 +141,7 @@ my $altname = "$remote.renamed";
 $sftp->unlink($altname);
 ok(!$sftp->unlink($altname), 'unlink non-existant file fails');
 my @error = $sftp->error();
-is_deeply(\@error, [LIBSSH2_FX_NO_SUCH_FILE, 'SSH_FX_NO_SUCH_FILE'],
+is_deeply(\@error, [LIBSSH2_FX_NO_SUCH_FILE(), 'SSH_FX_NO_SUCH_FILE'],
  'got LIBSSH2_FX_NO_SUCH_FILE error');
 ok($sftp->rename($remote, $altname), "rename $remote -> $altname");
 
@@ -189,9 +189,9 @@ ok($chan->exec('ls -d /'), "exec 'ls -d /'");
 my @poll = { handle => $chan, events => ['in'] };
 ok($ssh2->poll(250, \@poll), 'got poll response');
 ok($poll[0]->{revents}->{in}, 'got input event');
-chomp(my $line = <$chan>);
+chomp($line = <$chan>);
 is($line, '/', "got result '/'");
-my $line = <$chan>;
+$line = <$chan>;
 ok(!$line, 'no more lines');
 
 # (2) disconnect

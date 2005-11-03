@@ -190,7 +190,7 @@ our %EXPORT_TAGS = (
 
 our @EXPORT_OK = @{$EXPORT_TAGS{all}};
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 
 # methods
@@ -291,20 +291,25 @@ sub auth {
     return;  # failure
 }
 
-sub scp_get_file {
+sub scp_get {
     my ($self, $remote, $path) = @_;
     $path = basename $remote if not defined $path;
 
     my %stat;
-    my $chan = $self->scp_get($remote, \%stat);
+    my $chan = $self->_scp_get($remote, \%stat);
     return unless $chan;
 
     my $buf = '';
     $chan->blocking(1);
-    my $count = $chan->read_all($buf, $stat{size});
+    my $count = $chan->read($buf, $stat{size});
     return unless defined $count;
     $self->error(0, "want $stat{size}, have $count"), return
      unless $count == $stat{size};
+
+    # process SCP acknowledgment and send same
+    my $eof;
+    $chan->read($eof, 1);
+    $chan->write("\0");
     undef $chan;  # close
 
     my $mode = $stat{mode} & 0x777;
@@ -314,7 +319,7 @@ sub scp_get_file {
     return $file->syswrite($buf, $count) == $count;
 }
 
-sub scp_put_file {
+sub scp_put {
     my ($self, $path, $remote) = @_;
     $remote = basename $path if not defined $remote;
 
@@ -324,7 +329,7 @@ sub scp_put_file {
     $self->error($!, $!), return unless @stat;
 
     my $mode = $stat[2] & 0777;  # mask off extras such as S_IFREG
-    my $chan = $self->scp_put($remote, $mode, @stat[7, 8, 9]);
+    my $chan = $self->_scp_put($remote, $mode, @stat[7, 8, 9]);
     return unless $chan;
     $chan->blocking(1);
 
@@ -335,7 +340,13 @@ sub scp_put_file {
      unless $count == $stat[7];
     die 'sysread mismatch' unless length $buf == $count;
 
-    $chan->write($buf) == $count
+    # send file and send/receive SCP acknowledgement
+    my $success = $chan->write($buf) == $count;
+    $chan->write("\0");
+    my $eof;
+    $chan->read($eof, 1);
+
+    $success
 }
 
 my %Event;
@@ -363,8 +374,9 @@ sub poll {
         $handle = fileno $handle
          unless ref $handle and ref($handle) =~ /^Net::SSH2::/;
         my $out = { handle => $handle, events => 0 };
-        if (UNIVERSAL::isa($in->{events}, 'ARRAY')) {
-            for my $name(@{$in->{events}}) {
+        $events = [$events] if not ref $events and $events =~ /^\D+$/;
+        if (UNIVERSAL::isa($events, 'ARRAY')) {
+            for my $name(@$events) {
                 my $value = $Event{$name};
                 croak "Net::SSH2::poll: can't translate event '$name'"
                  unless defined $value;
@@ -801,23 +813,15 @@ allowed before the server refuses new connections.
 
 Returns a new Net::SSH2::Listener object.
 
-=head2 scp_get ( path [, stat arrayref ] )
+=head2 scp_get ( remote [, local ] )
 
-Receive a file via SCP.  On success, returns a channel object which can be
-read to retrieve the file.  If an arrayref is passed as the second parameter,
-it is filled in with the C<stat> values for the file (see L<perlfunc/stat>).
+Retrieve a file with scp; local path defaults to basename of remote.  C<local>
+may be an IO object (e.g. IO::File, IO::Scalar).
 
-=head2 scp_put ( path, mode, filesize [, mtime [, atime ]] )
+=head2 scp_put ( local [, remote ] )
 
-Prepare to send a file via SCP; returns a channel object on success.
-
-=head2 scp_get_file ( remote [, local ] )
-
-Retrieve a file with scp; local path defaults to basename of remote.
-
-=head2 scp_put_file ( local [, remote ] )
-
-Send a file with scp; remote path defaults to same as local.
+Send a file with scp; remote path defaults to same as local.  C<local> may be
+an IO object instead of a filename (but it must have a valid stat method).
 
 =head2 poll ( timeout, arrayref of hashes )
 

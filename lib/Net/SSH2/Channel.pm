@@ -66,6 +66,8 @@ sub READLINE {
 sub GETC {
     my $self = shift;
     my $buf;
+    my @poll = ({ handle => $self, events => 'in' });
+    return unless Net::SSH2->poll(250, \@poll) and $poll[0]->{revents}->{in};
     $self->read_all($buf, 1) ? $buf : undef
 }
 
