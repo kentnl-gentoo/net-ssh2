@@ -17,16 +17,12 @@ Net::SSH2::Listener - SSH 2 listener object
 
 =head1 DESCRIPTION
 
-A listener object is created by the L<Net::SSH2> C<listen> method.
+A listener object is created by the L<Net::SSH2> C<listen> method.  The
+L<Net::SSH2> C<poll> method can be used to check for connections.
 
 =head2 accept
 
 Accept a connection.  Returns a channel object on success, undef on failure.
-
-=head2 queued
-
-Returns true if one or more connections are waiting to be accepted (see also
-L<Net::SSH2> C<poll>).
 
 =head1 SEE ALSO
 

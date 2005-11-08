@@ -190,7 +190,7 @@ our %EXPORT_TAGS = (
 
 our @EXPORT_OK = @{$EXPORT_TAGS{all}};
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 
 
 # methods
@@ -822,6 +822,14 @@ may be an IO object (e.g. IO::File, IO::Scalar).
 
 Send a file with scp; remote path defaults to same as local.  C<local> may be
 an IO object instead of a filename (but it must have a valid stat method).
+
+=head2 sftp
+
+Return SecureFTP interface object (see L<Net::SSH2::SFTP>).
+
+=head2 public_key
+
+Return public key interface object (see L<Net::SSH2::PublicKey>).
 
 =head2 poll ( timeout, arrayref of hashes )
 

@@ -14,6 +14,12 @@
 #include <libssh2.h>
 #include <libssh2_sftp.h>
 
+/* include public key support if available */
+#if LIBSSH2_APINO >= 20050721326  /* 0.12+ */
+#include <libssh2_publickey.h>
+#define NET_SSH2_PUBLICKEY
+#endif  /* LIBSSH2API >= 200507211326 */
+
 
 #include "const-c.inc"
 
@@ -70,7 +76,8 @@ const char* libssh2_error[] = {
     "REQUEST_DENIED",
     "METHOD_NOT_SUPPORTED",
     "INVAL",
-    "INVALID_POLL_TYPE"
+    "INVALID_POLL_TYPE",
+	  "PUBLICKEY_PROTOCOL"
 };
 
 /* SSH_FX_* values; from 0 continuing positive */
@@ -157,6 +164,15 @@ typedef struct SSH2_DIR {
     LIBSSH2_SFTP_HANDLE* handle;
 } SSH2_DIR;
 
+/* Net::SSH2::PublicKey object */
+typedef struct SSH2_PUBLICKEY {
+    SSH2* ss;
+    SV* sv_ss;
+#ifdef NET_SSH2_PUBLICKEY
+    LIBSSH2_PUBLICKEY* pkey;
+#endif  /* NET_SSH2_PUBLICKEY */
+} SSH2_PUBLICKEY;
+
 static unsigned long net_ch_gensym = 0;
 static unsigned long net_fi_gensym = 0;
 
@@ -185,7 +201,7 @@ static int split_comma(SV** sp, const char* str) {
     while ((p = strchr(str, ','))) {
         mXPUSHp(str, p - str);
         str = p + 1;
-        i++;
+        ++i;
     }
     mXPUSHp(str, strlen(str));
     return i;
@@ -213,7 +229,7 @@ inline static const char* default_string(SV* sv) {
 }
 
 /* return an integer constant from an SV name or value */
-int iv_constant_sv(const char *prefix, SV* c_sv, IV* piv) {
+static int iv_constant_sv(const char *prefix, SV* c_sv, IV* piv) {
     int ret = 1;
 
     /* accept type as constant, constant without prefix, or numeric value */
@@ -225,7 +241,7 @@ int iv_constant_sv(const char *prefix, SV* c_sv, IV* piv) {
         const char* pv;
         STRLEN len = strlen(prefix);
 
-        for (p = str; *p; p++)
+        for (p = str; *p; ++p)
             *p = toUPPER(*p);
         if (strncmp(str, prefix, len))
             sv_insert(sv, 0/*offset*/, 0/*replace*/, (char*)prefix, len);
@@ -238,7 +254,7 @@ int iv_constant_sv(const char *prefix, SV* c_sv, IV* piv) {
 }
 
 /* create a hash from an SFTP attributes structure */
-HV* hv_from_attrs(LIBSSH2_SFTP_ATTRIBUTES* attrs) {
+static HV* hv_from_attrs(LIBSSH2_SFTP_ATTRIBUTES* attrs) {
     HV* hv = newHV();
     debug("hv_from_attrs: attrs->flags = %d\n", attrs->flags);
     if (attrs->flags & LIBSSH2_SFTP_ATTR_SIZE)
@@ -257,9 +273,10 @@ HV* hv_from_attrs(LIBSSH2_SFTP_ATTRIBUTES* attrs) {
 }
 
 /* return attributes from function, as flat hash or hashref */
-#define XSRETURN_ATTRS(name) XSRETURN(return_attrs(sp, &attrs, name))
+#define XSRETURN_STAT_ATTRS(name) XSRETURN(return_stat_attrs(sp, &attrs, name))
     
-int return_attrs(SV** sp, LIBSSH2_SFTP_ATTRIBUTES* attrs, SV* name) {
+static int return_stat_attrs(SV** sp, LIBSSH2_SFTP_ATTRIBUTES* attrs,
+ SV* name) {
     HV* hv_attrs = hv_from_attrs(attrs);
     if (name)
         hv_store(hv_attrs, "name", 4, name, 0/*hash*/);
@@ -283,6 +300,7 @@ int return_attrs(SV** sp, LIBSSH2_SFTP_ATTRIBUTES* attrs, SV* name) {
         RETVAL->parent = parent; \
         RETVAL->sv_##parent = SvREFCNT_inc(SvRV(ST(0))); \
         RETVAL->field = create; \
+        debug(#create " -> 0x%p\n", RETVAL->field); \
     } \
     if (!RETVAL || !RETVAL->field) { \
         if (RETVAL) \
@@ -307,6 +325,9 @@ int return_attrs(SV** sp, LIBSSH2_SFTP_ATTRIBUTES* attrs, SV* name) {
 /* wrap a libSSH2 SFTP connection */
 #define NEW_DIR(create) NEW_ITEM(SSH2_DIR, handle, create, sf)
 
+/* wrap a libSSH2 public key object */
+#define NEW_PUBLICKEY(create) NEW_ITEM(SSH2_PUBLICKEY, pkey, create, ss)
+
 /* callback for returning a password via "keyboard-interactive" auth */
 static LIBSSH2_USERAUTH_KBDINT_RESPONSE_FUNC(cb_kbdint_response_password) {
     SSH2* ss = (SSH2*)*abstract;
@@ -315,7 +336,7 @@ static LIBSSH2_USERAUTH_KBDINT_RESPONSE_FUNC(cb_kbdint_response_password) {
 
     if (num_prompts != 1 || prompts[0].echo) {
         int i;
-        for (i = 0; i < num_prompts; i++)
+        for (i = 0; i < num_prompts; ++i)
             responses[i].length = 0;
         return;
      }
@@ -339,7 +360,7 @@ static LIBSSH2_USERAUTH_KBDINT_RESPONSE_FUNC(cb_kbdint_response_callback) {
     PUSHs(*av_fetch((AV*)ss->sv_tmp, 2, 0/*lval*/));
     PUSHs(sv_2mortal(newSVpvn(name, name_len)));
     PUSHs(sv_2mortal(newSVpvn(instruction, instruction_len)));
-    for (i = 0; i < num_prompts; i++) {
+    for (i = 0; i < num_prompts; ++i) {
         HV* hv = newHV();
         responses[i].length = 0;
         hv_store(hv, "text", 4, newSVpvn(prompts[i].text, prompts[i].length),
@@ -350,10 +371,10 @@ static LIBSSH2_USERAUTH_KBDINT_RESPONSE_FUNC(cb_kbdint_response_callback) {
     PUTBACK;
 
     count = call_sv(*av_fetch((AV*)ss->sv_tmp, 0, 0/*lval*/), G_ARRAY);
-    SPAGAIN; SP -= count ; ax = (SP - PL_stack_base) + 1 ;
+    SPAGAIN; SP -= count; ax = (SP - PL_stack_base) + 1;
 
     /* translate the returned responses */
-    for (i = 0; i < count; i++) {
+    for (i = 0; i < count; ++i) {
         STRLEN len_response;
         const char* pv_response = SvPV(ST(i), len_response);
         responses[i].text = malloc(len_response);
@@ -377,7 +398,7 @@ static LIBSSH2_PASSWD_CHANGEREQ_FUNC(cb_password_change_callback) {
     *newpw = NULL;
     *newpw_len = 0;
     count = call_sv(*av_fetch((AV*)ss->sv_tmp, 0, 0/*lval*/), G_SCALAR);
-    SPAGAIN; SP -= count ; ax = (SP - PL_stack_base) + 1 ;
+    SPAGAIN; SP -= count; ax = (SP - PL_stack_base) + 1;
 
     if (count > 0) {
         STRLEN len_password;
@@ -401,7 +422,7 @@ static LIBSSH2_IGNORE_FUNC(cb_ignore_callback) {
     PUTBACK;
 
     count = call_sv(ss->rgsv_cb[LIBSSH2_CALLBACK_IGNORE], G_VOID);
-    SPAGAIN; SP -= count ; ax = (SP - PL_stack_base) + 1 ;
+    SPAGAIN; SP -= count; ax = (SP - PL_stack_base) + 1;
 
     PUTBACK; FREETMPS; LEAVE;
 }
@@ -419,7 +440,7 @@ static LIBSSH2_DEBUG_FUNC(cb_debug_callback) {
     PUTBACK;
 
     count = call_sv(ss->rgsv_cb[LIBSSH2_CALLBACK_DEBUG], G_VOID);
-    SPAGAIN; SP -= count ; ax = (SP - PL_stack_base) + 1 ;
+    SPAGAIN; SP -= count; ax = (SP - PL_stack_base) + 1;
 
     PUTBACK; FREETMPS; LEAVE;
 }
@@ -437,7 +458,7 @@ static LIBSSH2_DISCONNECT_FUNC(cb_disconnect_callback) {
     PUTBACK;
 
     count = call_sv(ss->rgsv_cb[LIBSSH2_CALLBACK_DISCONNECT], G_VOID);
-    SPAGAIN; SP -= count ; ax = (SP - PL_stack_base) + 1 ;
+    SPAGAIN; SP -= count; ax = (SP - PL_stack_base) + 1;
 
     PUTBACK; FREETMPS; LEAVE;
 }
@@ -445,6 +466,7 @@ static LIBSSH2_DISCONNECT_FUNC(cb_disconnect_callback) {
 /* thunk to call perl SSH_MSG_MACERROR packet function */
 static LIBSSH2_MACERROR_FUNC(cb_macerror_callback) {
     SSH2* ss = (SSH2*)*abstract;
+    int ret = 0;
 
     dSP; I32 ax; int count;
     ENTER; SAVETMPS; PUSHMARK(SP);
@@ -452,10 +474,14 @@ static LIBSSH2_MACERROR_FUNC(cb_macerror_callback) {
     mXPUSHp(packet, packet_len);
     PUTBACK;
 
-    count = call_sv(ss->rgsv_cb[LIBSSH2_CALLBACK_MACERROR], G_VOID);
-    SPAGAIN; SP -= count ; ax = (SP - PL_stack_base) + 1 ;
+    count = call_sv(ss->rgsv_cb[LIBSSH2_CALLBACK_MACERROR], G_SCALAR);
+    SPAGAIN; SP -= count ; ax = (SP - PL_stack_base) + 1;
 
+    if (count > 0)
+        ret = SvIV(ST(0));
+ 
     PUTBACK; FREETMPS; LEAVE;
+    return ret;
 }
 
 /* thunk to call perl X11 forwarder packet function */
@@ -526,7 +552,7 @@ CODE:
 #define LIBSSH2_APINO_STR NET_SSH2_STROF(LIBSSH2_APINO)
     
 void
-net_ss_version(...)
+net_ss_version(SV* name = NULL)
 CODE:
     switch (GIMME_V) {
     case G_SCALAR:
@@ -626,10 +652,12 @@ PPCODE:
         
     /* accept prefs as a string or multiple strings, joining with "," */
     prefs = newSVpvn("", 0);
-    for (i = 2; i < items; i++) {
+    for (i = 2; i < items; ++i) {
+        const char* pv_pref;
         if (i > 2)
             sv_catpvn(prefs, ",", 1);
-        sv_catpvn(prefs, SvPV(ST(i), len), len);
+        pv_pref = SvPV(ST(i), len);
+        sv_catpvn(prefs, pv_pref, len);
     }
 
     /* call and clean up */
@@ -663,11 +691,13 @@ CODE:
     ss->rgsv_cb[i_type] = callback;
     XSRETURN_IV(1);
 
-int
+void
 net_ss__startup(SSH2* ss, int socket, SV *store)
+PREINIT:
+    int success;
 CODE:
     clear_error(ss);
-    int success = !libssh2_session_startup(ss->session, socket);
+    success = !libssh2_session_startup(ss->session, socket);
     if (success && store)
         ss->socket = SvREFCNT_inc(SvRV(store));
     XSRETURN_IV(success);
@@ -750,7 +780,7 @@ CODE:
     /* if we have a callback, setup its parameters */
     if (callback) {
         SV* rgsv[] = { callback, ST(0), username }; /* callback, params... */
-        for (i = 0; i < countof(rgsv); i++)
+        for (i = 0; i < countof(rgsv); ++i)
             SvREFCNT_inc(rgsv[i]);
         ss->sv_tmp = (SV*)av_make(countof(rgsv), rgsv);
     }
@@ -769,7 +799,7 @@ void
 net_ss_auth_publickey(SSH2* ss, SV* username, const char* publickey, \
  const char* privatekey, SV* passphrase = NULL)
 PREINIT:
-    const char* pv_username, * pv_passphrase;
+    const char* pv_username;
     STRLEN len_username;
 CODE:
     clear_error(ss);
@@ -831,7 +861,7 @@ CODE:
     {
         SV* rgsv[] = { password, ST(0), username }; /* callback, params... */
         int i;
-        for (i = 0; i < countof(rgsv); i++)
+        for (i = 0; i < countof(rgsv); ++i)
             SvREFCNT_inc(rgsv[i]);
         ss->sv_tmp = (SV*)av_make(countof(rgsv), rgsv);
     }
@@ -927,29 +957,24 @@ CODE:
 OUTPUT:
     RETVAL
 
-SSH2_SFTP*
-net_ss_sftp(SSH2* ss)
-CODE:
-    clear_error(ss);
-    NEW_SFTP(libssh2_sftp_init(ss->session));
-OUTPUT:
-    RETVAL
-
 void
-net_ss__poll(SV*, int timeout, AV* event)
+net_ss__poll(SSH2* ss, int timeout, AV* event)
 PREINIT:
     LIBSSH2_POLLFD* pollfd;
     int i, count, changed;
 CODE:
+    clear_error(ss);
     count = av_len(event) + 1;
     debug("%s::poll: timeout = %d, array[%d]\n", class, timeout, count);
-    if (!(pollfd = malloc(sizeof(LIBSSH2_POLLFD) * count)))
+    if (!(pollfd = malloc(sizeof(LIBSSH2_POLLFD) * count))) {
+        set_error(ss, 0, "out of memory allocating pollfd structures");
         XSRETURN_EMPTY;
-    for (i = 0; i < count; i++) {
+    }
+    for (i = 0; i < count; ++i) {
         SV* sv = *av_fetch(event, i, 0/*lval*/), ** handle, ** events;
         HV* hv;
 
-        if (!SvROK(sv) && SvTYPE(SvRV(sv)) == SVt_PVHV)
+        if (!SvROK(sv) || SvTYPE(SvRV(sv)) != SVt_PVHV)
             croak("%s::poll: array element %d is not hash", class, i);
         hv = (HV*)SvRV(sv);
 
@@ -995,12 +1020,33 @@ CODE:
     if (changed < 0)
         XSRETURN_EMPTY;
 
-    for (i = 0; i < count; i++) {
+    for (i = 0; i < count; ++i) {
         HV* hv = (HV*)SvRV(*av_fetch(event, i, 0/*lval*/));
         hv_store(hv, "revents", 7, newSViv(pollfd[i].revents), 0/*hash*/);
         debug("- [%d] revents %d\n", i, pollfd[i].revents);
     }
     XSRETURN_IV(changed);
+
+SSH2_SFTP*
+net_ss_sftp(SSH2* ss)
+CODE:
+    clear_error(ss);
+    NEW_SFTP(libssh2_sftp_init(ss->session));
+OUTPUT:
+    RETVAL
+
+SSH2_PUBLICKEY*
+net_ss_public_key(SSH2* ss)
+CODE:
+    clear_error(ss);
+#ifdef NET_SSH2_PUBLICKEY
+    NEW_PUBLICKEY(libssh2_publickey_init(ss->session));
+#else  /* !NET_SSH2_PUBLICKEY */
+    set_error(ss, 0, "public key support requires libssh2 0.12+");
+    XSRETURN_EMPTY;
+#endif  /* NET_SSH2_PUBLICKEY */
+OUTPUT:
+    RETVAL
 
 #undef class
 
@@ -1135,13 +1181,12 @@ CODE:
     XSRETURN_IV(1);
 
 void
-net_ch_read(SSH2_CHANNEL* ch, SV* buffer, size_t size, int ext = 0, \
- int _all = 0)
+net_ch_read(SSH2_CHANNEL* ch, SV* buffer, size_t size, int ext = 0)
 PREINIT:
     char* pv_buffer;
     int count, total = 0;
 CODE:
-    debug("%s::read(size = %d, ext = %d, _all = %d)\n", class, size, ext, _all);
+    debug("%s::read(size = %d, ext = %d)\n", class, size, ext);
     clear_error(ch->ss);
     SvPOK_on(buffer);
     pv_buffer = sv_grow(buffer, size + 1/*NUL*/);  /* force PV */
@@ -1159,7 +1204,7 @@ CODE:
     }
 
     total += count;
-    if (_all && count && count < size) {
+    if (count && count < size) {
         pv_buffer += count;
         size -= count;
         goto again;
@@ -1169,16 +1214,6 @@ CODE:
     SvCUR_set(buffer, total);
     debug("- read %d total\n", total);
     XSRETURN_IV(total);
-
-void
-net_ch_can_read(SSH2_CHANNEL* ch, int ext = 0)
-CODE:
-    XSRETURN_IV(libssh2_poll_channel_read(ch->channel, XLATEXT));
-
-void
-net_ch_can_write(SSH2_CHANNEL* ch, int ext = 0)
-CODE:
-    XSRETURN_IV(libssh2_poll_channel_write(ch->channel, XLATEXT));
 
 void
 net_ch_write(SSH2_CHANNEL* ch, SV* buffer, int ext = 0)
@@ -1233,11 +1268,6 @@ CODE:
 OUTPUT:
     RETVAL
 
-void
-net_ls_queued(SSH2_LISTENER* ls, int ext = 0)
-CODE:
-    XSRETURN_IV(libssh2_poll_listener_queued(ls->listener));
-
 #undef class
 
 
@@ -1256,7 +1286,7 @@ CODE:
     SvREFCNT_dec(sf->sv_ss);
     Safefree(sf);
 
-SV*
+void
 net_sf_session(SSH2_SFTP* sf)
 CODE:
     ST(0) = sv_2mortal(newRV_inc(sf->sv_ss));
@@ -1387,7 +1417,7 @@ PPCODE:
      follow ? LIBSSH2_SFTP_STAT : LIBSSH2_SFTP_LSTAT, &attrs);
     if (!success)
         XSRETURN_EMPTY;
-    XSRETURN_ATTRS(SvREFCNT_inc(path));
+    XSRETURN_STAT_ATTRS(SvREFCNT_inc(path));
 
 void
 net_sf_setstat(SSH2_SFTP* sf, SV* path, ...)
@@ -1438,7 +1468,7 @@ PREINIT:
     SV* link;
     const char* pv_path;
     char* pv_link;
-    STRLEN len_path, len_link;
+    STRLEN len_path;
     int count;
 CODE:
     clear_error(sf->ss);
@@ -1465,7 +1495,7 @@ PREINIT:
     SV* real;
     const char* pv_path;
     char* pv_real;
-    STRLEN len_path, len_real;
+    STRLEN len_path;
     int count;
 CODE:
     clear_error(sf->ss);
@@ -1539,13 +1569,12 @@ CODE:
 void
 net_fi_stat(SSH2_FILE* fi)
 PREINIT:
-    int success;
     LIBSSH2_SFTP_ATTRIBUTES attrs;
 PPCODE:
     clear_error(fi->sf->ss);
     if (libssh2_sftp_fstat(fi->handle, &attrs))
         XSRETURN_EMPTY;
-    XSRETURN_ATTRS(NULL/*name*/);
+    XSRETURN_STAT_ATTRS(NULL/*name*/);
 
 void
 net_fi_setstat(SSH2_FILE* fi, ...)
@@ -1625,6 +1654,134 @@ PPCODE:
     }
     pv_buffer[count] = '\0';
     SvCUR_set(buffer, count);
-    XSRETURN_ATTRS(buffer);
+    XSRETURN_STAT_ATTRS(buffer);
 
 #undef class
+
+
+MODULE = Net::SSH2		PACKAGE = Net::SSH2::PublicKey   PREFIX = net_pk_
+PROTOTYPES: DISABLE
+
+#define class "Net::SSH2::PublicKey"
+
+#ifdef NET_SSH2_PUBLICKEY
+
+void
+net_pk_DESTROY(SSH2_PUBLICKEY* pk)
+CODE:
+    debug("%s::DESTROY\n", class);
+    clear_error(pk->ss);
+    libssh2_publickey_shutdown(pk->pkey);
+    SvREFCNT_dec(pk->sv_ss);
+    Safefree(pk);
+
+void
+net_pk_add(SSH2_PUBLICKEY* pk, SV* name, SV* blob, int overwrite, ...)
+PREINIT:
+    int success;
+    const char* pv_name, * pv_blob;
+    STRLEN len_name, len_blob;
+    unsigned long num_attrs, i;
+    libssh2_publickey_attribute *attrs;
+CODE:
+    clear_error(pk->ss);
+    pv_name = SvPV(name, len_name);
+    pv_blob = SvPV(blob, len_blob);
+
+    num_attrs = items - 4;
+    if (!(attrs = malloc(sizeof(*attrs) * num_attrs))) {
+        set_error(pk->ss, 0, "out of memory allocating attribute structures");
+        XSRETURN_EMPTY;
+    }
+    for (i = 0; i < num_attrs; ++i) {
+        HV* hv;
+        SV** tmp;
+        STRLEN len_tmp;
+
+        if (!SvROK(ST(i + 4)) || SvTYPE(SvRV(ST(i + 4))) != SVt_PVHV)
+            croak("%s::add: attribute %d is not hash", class, i);
+        hv = (HV*)SvRV(ST(i + 4));
+
+        if (!(tmp = hv_fetch(hv, "name", 4, 0/*lval*/)) || !*tmp)
+            croak("%s::add: attribute %d missing name", class, i);
+        attrs[i].name = SvPV(*tmp, len_tmp);
+        attrs[i].name_len = len_tmp;
+
+        if ((tmp = hv_fetch(hv, "value", 5, 0/*lval*/)) && *tmp) {
+            attrs[i].value = SvPV(*tmp, len_tmp);
+            attrs[i].value_len = len_tmp;
+        } else
+            attrs[i].value_len = 0;
+
+        if ((tmp = hv_fetch(hv, "mandatory", 9, 0/*lval*/)) && *tmp)
+            attrs[i].mandatory = SvIV(*tmp);
+        else
+            attrs[i].mandatory = 0;
+    }
+
+    success = !libssh2_publickey_add_ex(pk->pkey,
+     pv_name, len_name, pv_blob, len_blob, overwrite, num_attrs, attrs);
+
+    free(attrs);
+    XSRETURN_IV(!success);
+    
+void
+net_pk_remove(SSH2_PUBLICKEY* pk, SV* name, SV* blob)
+PREINIT:
+    const char* pv_name, * pv_blob;
+    STRLEN len_name, len_blob;
+CODE:
+    clear_error(pk->ss);
+    pv_name = SvPV(name, len_name);
+    pv_blob = SvPV(blob, len_blob);
+    XSRETURN_IV(!libssh2_publickey_remove_ex(pk->pkey,
+     pv_name, len_name, pv_blob, len_blob));
+
+void
+net_pk_fetch(SSH2_PUBLICKEY* pk)
+PREINIT:
+    unsigned long keys, i, j;
+    libssh2_publickey_list* list = NULL;
+PPCODE:
+    if (!libssh2_publickey_list_fetch(pk->pkey, &keys, &list) || !list)
+        XSRETURN_EMPTY;
+
+    if (GIMME_V == G_ARRAY) {
+        EXTEND(SP, keys);
+
+        for (i = 0; i < keys; ++i) {
+            HV* hv = newHV();
+            AV* av = newAV();
+
+            hv_store(hv, "name", 4, newSVpvn(list[i].name, list[i].name_len),
+             0/*hash*/);
+            hv_store(hv, "blob", 4, newSVpvn(list[i].blob, list[i].blob_len),
+             0/*hash*/);
+
+            hv_store(hv, "attr", 4, newRV_noinc((SV*)av), 0/*hash*/);
+            av_extend(av, list[i].num_attrs - 1);
+            for (j = 0; j < list[i].num_attrs; ++j) {
+                HV* attr = newHV();
+                hv_store(attr, "name", 4, newSVpvn(list[i].attrs[j].name,
+                 list[i].attrs[j].name_len), 0/*hash*/);
+                hv_store(attr, "value", 5, newSVpvn(list[i].attrs[j].value,
+                 list[i].attrs[j].value_len), 0/*hash*/);
+                hv_store(attr, "mandatory", 9,
+                 newSViv(list[i].attrs[j].mandatory), 0/*hash*/);
+                av_store(av, j, newRV_noinc((SV*)attr));
+            }
+            
+            ST(i) = sv_2mortal(newRV_noinc((SV*)hv));
+        }
+    }
+
+    libssh2_publickey_list_free(pk->pkey, list);
+
+    if (GIMME_V == G_ARRAY)
+        XSRETURN(keys);
+    XSRETURN_UV(keys);
+
+#undef class
+
+#endif  /* NET_SSH2_PUBLICKEY */
+

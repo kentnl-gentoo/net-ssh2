@@ -4,7 +4,7 @@
 
 #########################
 
-use Test::More tests => 68;
+use Test::More tests => 72;
 
 use strict;
 use File::Basename;
@@ -34,12 +34,12 @@ like($apino, qr/^\d{12}$/, 'API date yyyymmddhhmm');
 is($banner, "SSH-2.0-libssh2_$version", "banner is $banner");
 
 # (2) timeout
-is(Net::SSH2->poll(0), 0, 'poll indefinite');
-is(Net::SSH2->poll(250), 0, 'poll 1/4 second');
+is($ssh2->poll(0), 0, 'poll indefinite');
+is($ssh2->poll(250), 0, 'poll 1/4 second');
 
 # (1) connect
 SKIP: { # SKIP-connect
-skip '- non-interactive session', 57 unless $host or -t STDOUT;
+skip '- non-interactive session', 61 unless $host or -t STDOUT;
 $| = 1;
 unless ($host) {
     print <<TEST;
@@ -53,7 +53,7 @@ TEST
     print "\n";
 }
 SKIP: { # SKIP-server
-skip '- no server daemon available', 57 unless $host;
+skip '- no server daemon available', 61 unless $host;
 ok($ssh2->connect($host), "connect to $host");
 
 # (8) server methods
@@ -86,7 +86,7 @@ ok(!$ssh2->auth_ok, 'not authenticated yet');
 my $type = $ssh2->auth(username => $user, @auth);
 ok($type, "authenticated via: $type");
 SKIP: { # SKIP-auth
-skip '- failed to authenticate with server', 33 unless $ssh2->auth_ok;
+skip '- failed to authenticate with server', 37 unless $ssh2->auth_ok;
 pass('authenticated successfully');
 
 # (5) channels
@@ -110,7 +110,7 @@ ok($ssh2->callback(disconnect => sub { warn "SSH_MSG_DISCONNECT!\n"; }),
 
 # (2) SFTP
 my $sftp = $ssh2->sftp();
-isa_ok($sftp, 'Net::SSH2::SFTP', 'new SFTP');
+isa_ok($sftp, 'Net::SSH2::SFTP', 'SFTP session');
 is($sftp->session, $ssh2, 'verify session');
 
 # (4) directories
@@ -193,6 +193,19 @@ chomp($line = <$chan>);
 is($line, '/', "got result '/'");
 $line = <$chan>;
 ok(!$line, 'no more lines');
+
+# (4) public key
+my $pk = $ssh2->public_key;
+SKIP: {
+skip ' - public key infrastructure not present', 4 unless $pk;
+isa_ok($pk, 'Net::SSH2::PublicKey', 'public key session');
+my @keys = $pk->fetch();
+pass('got '.(scalar @keys).' keys in array');
+my $keys = $pk->fetch();
+pass("got $keys keys available");
+is(scalar @keys, $keys, 'public key counts match');
+}
+undef $pk;
 
 # (2) disconnect
 ok($chan->close(), 'close channel'); # optional step

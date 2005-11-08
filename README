@@ -1,5 +1,5 @@
-Net-SSH2 version 0.01
-=====================
+Net::SSH2 - Secure Shell protocol interface
+===========================================
 
 Net::SSH2 is a perl interface to the libssh2 (http://www.libssh2.org)
 library.  It supports the SSH2 protocol (there is no support for SSH1)
@@ -56,6 +56,10 @@ perlapi, and perlcall perldoc pages to learn more.  The secure shell protocol
 us managed by the IETF secsh working group at
 http://www.ietf.org/html.charters/secsh-charter.html.  The source code of
 libSSH2 will also be instructive.
+
+TODO
+
+More examples for the example/ directory would be nice.
 
 COPYRIGHT AND LICENCE
 

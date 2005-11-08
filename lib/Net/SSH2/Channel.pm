@@ -23,12 +23,6 @@ sub error {
     shift->session->error(@_)
 }
 
-sub read_all {
-    no warnings;
-    $_[4] = 1;
-    &read
-}
-
 
 # tie interface
 
@@ -67,14 +61,15 @@ sub GETC {
     my $self = shift;
     my $buf;
     my @poll = ({ handle => $self, events => 'in' });
-    return unless Net::SSH2->poll(250, \@poll) and $poll[0]->{revents}->{in};
-    $self->read_all($buf, 1) ? $buf : undef
+    return
+     unless $self->session->poll(250, \@poll) and $poll[0]->{revents}->{in};
+    $self->read($buf, 1) ? $buf : undef
 }
 
 sub READ {
     my ($self, $rbuf, $len, $offset) = @_;
     my ($tmp, $count);
-    return unless defined($count = $self->read_all($tmp, $len));
+    return unless defined($count = $self->read($tmp, $len));
     substr($$rbuf, $offset) = $tmp;
     $count
 }
@@ -100,7 +95,8 @@ Net::SSH2::Channel - SSH 2 channel object
 =head1 DESCRIPTION
 
 A channel object is created by the L<Net::SSH2> C<channel> method.  As well
-as being an object, it is also a tied filehandle.
+as being an object, it is also a tied filehandle.  The L<Net::SSH2> C<poll>
+method can be used to check for read/write availability and other conditions.
 
 =head2 setenv ( key, value ... )
 
@@ -175,25 +171,11 @@ Merge into the regular channel.
 
 =back
 
-=head2 can_read
-
-Returns true iff there is data available to read (see also L<Net::SSH2>
-C<poll>).
-
-=head2 can_write
-
-Returns true iff writing to the channel will not block.
-
 =head2 read ( buffer, size [, ext ] )
 
 Attempts to read size bytes into the buffer.  Returns number of bytes read,
 undef on failure.  If ext is present and set, reads from the extended data
 channel (stderr).
-
-=head2 read_all ( buffer, size [, ext ] )
-
-Like read, but on a socket timeout, will retry until it reads the requested
-bytes or encounters an error.
 
 =head2 write ( buffer [, ext ] )
 

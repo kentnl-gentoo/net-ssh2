@@ -1,10 +1,11 @@
 TYPEMAP
-    SSH2         *   O_SESSION
-    SSH2_CHANNEL *   O_CHANNEL
-    SSH2_LISTENER*   O_LISTENER
-    SSH2_SFTP    *   O_SFTP
-    SSH2_FILE    *   O_FILE
-    SSH2_DIR     *   O_DIR
+    SSH2          *   O_SESSION
+    SSH2_CHANNEL  *   O_CHANNEL
+    SSH2_LISTENER *   O_LISTENER
+    SSH2_SFTP     *   O_SFTP
+    SSH2_FILE     *   O_FILE
+    SSH2_DIR      *   O_DIR
+    SSH2_PUBLICKEY*   O_PUBLICKEY
 
 OUTPUT
 O_SESSION
@@ -43,6 +44,9 @@ O_FILE
 O_DIR
     sv_setref_pv($arg, "Net::SSH2::Dir", (void *)$var);
 
+O_PUBLICKEY
+    sv_setref_pv($arg, "Net::SSH2::PublicKey", (void *)$var);
+
 INPUT
 O_SESSION
     if(sv_isobject($arg) && (SvTYPE(SvRV($arg)) == SVt_PVMG))
@@ -79,4 +83,10 @@ O_DIR
         $var = ($type)SvIV((SV*)SvRV($arg));
     else
         croak(\"${Package}::$func_name() - invalid SFTP directory object\");
+
+O_PUBLICKEY
+    if(sv_isobject($arg) && (SvTYPE(SvRV($arg)) == SVt_PVMG))
+        $var = ($type)SvIV((SV*)SvRV($arg));
+    else
+        croak(\"${Package}::$func_name() - invalid public key object\");
 

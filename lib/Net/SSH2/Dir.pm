@@ -22,7 +22,7 @@ An SFTP file object is created by the L<Net::SSH2::SFTP> C<opendir> method.
 =head2 read
 
 Returns a hash (hashref in scalar context); keys are C<name> and those returned
-by Net::SSH2::SFTP::stat.
+by Net::SSH2::SFTP::stat; returns empty list or undef if no more files.
 
 =head1 SEE ALSO
 
