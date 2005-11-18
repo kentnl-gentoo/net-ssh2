@@ -1,4 +1,3 @@
-/* we may not need our own error status after all. */
 /*
  * SSH2.xs - C functions for Net::SSH2
  *
@@ -15,10 +14,10 @@
 #include <libssh2_sftp.h>
 
 /* include public key support if available */
-#if LIBSSH2_APINO >= 20050721326  /* 0.12+ */
+#if LIBSSH2_APINO >= 200507211326  /* 0.12+ */
 #include <libssh2_publickey.h>
 #define NET_SSH2_PUBLICKEY
-#endif  /* LIBSSH2API >= 200507211326 */
+#endif  /* LIBSSH2_APINO >= 200507211326 */
 
 
 #include "const-c.inc"
@@ -27,7 +26,8 @@
 /* debug */
 
 #if 1
-#define debug(...)
+/* variadic macros aren't portable */
+static void debug(const char* _format, ...) {}
 #else
 #define debug warn
 #endif
@@ -185,7 +185,7 @@ static void set_error(SSH2* ss, int errcode, const char* errmsg) {
 }    
 
 /* clear our local error flag */
-inline static void clear_error(SSH2* ss) {
+static void clear_error(SSH2* ss) {
     set_error(ss, LIBSSH2_ERROR_NONE, NULL/*errmsg*/);
 }
 
@@ -224,7 +224,7 @@ static int push_hv(SV** sp, HV* hv) {
 }
 
 /* return NULL if undef or NULL, else return string */
-inline static const char* default_string(SV* sv) {
+static const char* default_string(SV* sv) {
     return (sv && SvPOK(sv)) ? SvPV_nolen(sv) : NULL;
 }
 
@@ -281,8 +281,8 @@ static int return_stat_attrs(SV** sp, LIBSSH2_SFTP_ATTRIBUTES* attrs,
     if (name)
         hv_store(hv_attrs, "name", 4, name, 0/*hash*/);
 
-    switch (GIMME_V) { \
-    case G_SCALAR: \
+    switch (GIMME_V) {
+    case G_SCALAR:
         PUSHs(sv_2mortal(newRV_noinc((SV*)hv_attrs)));
         return 1;
     case G_ARRAY:
@@ -859,8 +859,13 @@ CODE:
 
     /* set up parameters for callback */
     {
-        SV* rgsv[] = { password, ST(0), username }; /* callback, params... */
+        SV* rgsv[3];  /* callback, params... */
         int i;
+
+			 	rgsv[0] = password;
+				rgsv[1] = ST(0);
+				rgsv[2] = username;
+
         for (i = 0; i < countof(rgsv); ++i)
             SvREFCNT_inc(rgsv[i]);
         ss->sv_tmp = (SV*)av_make(countof(rgsv), rgsv);
@@ -1753,10 +1758,10 @@ PPCODE:
             HV* hv = newHV();
             AV* av = newAV();
 
-            hv_store(hv, "name", 4, newSVpvn(list[i].name, list[i].name_len),
-             0/*hash*/);
-            hv_store(hv, "blob", 4, newSVpvn(list[i].blob, list[i].blob_len),
-             0/*hash*/);
+            hv_store(hv, "name", 4,
+             newSVpvn((char*)list[i].name, list[i].name_len), 0/*hash*/);
+            hv_store(hv, "blob", 4,
+             newSVpvn((char*)list[i].blob, list[i].blob_len), 0/*hash*/);
 
             hv_store(hv, "attr", 4, newRV_noinc((SV*)av), 0/*hash*/);
             av_extend(av, list[i].num_attrs - 1);

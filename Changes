@@ -3,9 +3,14 @@ Revision history for Perl extension Net::SSH2.
 Developer/maintainer: David B. Robins <dbrobins@cpan.org>.
 Project started 2005-10-23 in Redmond, Washington, USA.
 
+0.05  2005-11-11  dbr  (svn revision 40)
+        - More C89 fixes (-ansi -pedantic); thanks to Chuck Carson for testing.
+        - Remove "inline" (Solaris cc doesn't like it) (rt.cpan.org #15707).
+        - Various minor cleanups.
+
 0.04  2005-11-07  dbr  (svn revision 38)
         - Fix c89 compile errors and warnings (-Wall).
-        - Make t/read.pl available as first sample script.
+        - Make example/read.pl available as first sample script.
         - Add public key objects (libssh2 0.12+ only).
 
 0.03  2005-11-02  dbr  (svn revision 36)
