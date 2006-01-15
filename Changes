@@ -3,6 +3,14 @@ Revision history for Perl extension Net::SSH2.
 Developer/maintainer: David B. Robins <dbrobins@cpan.org>.
 Project started 2005-10-23 in Redmond, Washington, USA.
 
+0.06  2006-01-14  dbr  (svn revision 42)
+        - Win32 modifications (thanks to Eric Lam for research and patches).
+        - Use MAXPATHLEN instead of PATH_MAX; add some casts (thanks to
+          bug report from Freddy Soderlund).
+        - Update exec documentation to clarify that it runs a single command
+          and closes the channel (thanks to Mike Schmidt).
+        - Use '' for tied PRINT output separator if undefined (stop warnings).
+
 0.05  2005-11-11  dbr  (svn revision 40)
         - More C89 fixes (-ansi -pedantic); thanks to Chuck Carson for testing.
         - Remove "inline" (Solaris cc doesn't like it) (rt.cpan.org #15707).

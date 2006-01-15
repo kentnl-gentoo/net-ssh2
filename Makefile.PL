@@ -5,6 +5,10 @@ use ExtUtils::MakeMaker;
 use Cwd;
 use Config;
 
+# Windows, as usual, is a special case
+my $win32 = ($^O eq 'MSWin32');
+my @define = $win32 ? (DEFINE => '-DLIBSSH2_WIN32') : ();
+
 # override library and include directory here if desired
 my $lib = '';
 my $inc = '';
@@ -54,6 +58,7 @@ WriteMakefile(
        AUTHOR         => 'David B. Robins <dbrobins@cpan.org>') : ()),
     LIBS              => [$lib],
     INC               => "$inc -I.",
+    @define,
 );
 if  (eval {require ExtUtils::Constant; 1}) {
   # If you edit these definitions to change the constants used by this module,

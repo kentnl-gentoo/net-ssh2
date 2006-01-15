@@ -620,7 +620,7 @@ CODE:
              newSVpvf("LIBSSH2_ERROR_%s", libssh2_error[-errcode]) :
              newSVpvf("LIBSSH2_ERROR_UNKNOWN(%d)", errcode);
         } else if(errcode > 0)
-            code = newSVpv(strerror(errcode), 0);
+            code = newSVpv(Strerror(errcode), 0);
         else
             code = newSVpvn("", 0);  /* possibly set via set_error */
         ST(1) = sv_2mortal(code);
@@ -765,7 +765,8 @@ PREINIT:
     int i;
 CODE:
     clear_error(ss);
-    if (callback && !(SvROK(callback) && SvTYPE(SvRV(callback)) == SVt_PVCV))
+    if (callback && SvOK(callback) &&
+     !(SvROK(callback) && SvTYPE(SvRV(callback)) == SVt_PVCV))
         croak("%s::auth_password: callback must be CODE ref", class);
     pv_username = SvPV(username, len_username);
 
@@ -915,8 +916,8 @@ CODE:
         hv_store(stat, "uid",   3, newSVuv(st.st_uid),   0/*hash*/);
         hv_store(stat, "gid",   3, newSVuv(st.st_gid),   0/*hash*/);
         hv_store(stat, "size",  4, newSVuv(st.st_size),  0/*hash*/);
-        hv_store(stat, "atime", 5, newSVuv(st.st_atime), 0/*hash*/);
-        hv_store(stat, "mtime", 5, newSViv(st.st_mtime), 0/*hash*/);
+        hv_store(stat, "atime", 5, newSVuv((time_t)st.st_atime), 0/*hash*/);
+        hv_store(stat, "mtime", 5, newSViv((time_t)st.st_mtime), 0/*hash*/);
     }
 OUTPUT:
     RETVAL
@@ -1209,7 +1210,7 @@ CODE:
     }
 
     total += count;
-    if (count && count < size) {
+    if (count > 0 && (unsigned)count < size) {
         pv_buffer += count;
         size -= count;
         goto again;
@@ -1478,12 +1479,12 @@ PREINIT:
 CODE:
     clear_error(sf->ss);
     pv_path = SvPV(path, len_path);
-    link = newSV(PATH_MAX + 1);
+    link = newSV(MAXPATHLEN + 1);
     SvPOK_on(link);
     pv_link = SvPVX(link);
 
     count = libssh2_sftp_symlink_ex(sf->sftp,
-     pv_path, len_path, pv_link, PATH_MAX, LIBSSH2_SFTP_READLINK);
+     pv_path, len_path, pv_link, MAXPATHLEN, LIBSSH2_SFTP_READLINK);
 
     if (count < 0) {
         SvREFCNT_dec(link);
@@ -1505,12 +1506,12 @@ PREINIT:
 CODE:
     clear_error(sf->ss);
     pv_path = SvPV(path, len_path);
-    real = newSV(PATH_MAX + 1);
+    real = newSV(MAXPATHLEN + 1);
     SvPOK_on(real);
     pv_real = SvPVX(real);
 
     count = libssh2_sftp_symlink_ex(sf->sftp,
-     pv_path, len_path, pv_real, PATH_MAX, LIBSSH2_SFTP_READLINK);
+     pv_path, len_path, pv_real, MAXPATHLEN, LIBSSH2_SFTP_READLINK);
 
     if (count < 0) {
         SvREFCNT_dec(real);
@@ -1647,11 +1648,11 @@ PREINIT:
     LIBSSH2_SFTP_ATTRIBUTES attrs;
 PPCODE:
     clear_error(di->sf->ss);
-    buffer = newSV(PATH_MAX + 1);
+    buffer = newSV(MAXPATHLEN + 1);
     SvPOK_on(buffer);
     pv_buffer = SvPVX(buffer);
 
-    count = libssh2_sftp_readdir(di->handle, pv_buffer, PATH_MAX, &attrs);
+    count = libssh2_sftp_readdir(di->handle, pv_buffer, MAXPATHLEN, &attrs);
 
     if (count <= 0) {
         XSRETURN_EMPTY;
@@ -1719,7 +1720,7 @@ CODE:
             attrs[i].value_len = 0;
 
         if ((tmp = hv_fetch(hv, "mandatory", 9, 0/*lval*/)) && *tmp)
-            attrs[i].mandatory = SvIV(*tmp);
+            attrs[i].mandatory = (char)SvIV(*tmp);
         else
             attrs[i].mandatory = 0;
     }

@@ -190,7 +190,7 @@ our %EXPORT_TAGS = (
 
 our @EXPORT_OK = @{$EXPORT_TAGS{all}};
 
-our $VERSION = '0.05';
+our $VERSION = '0.06';
 
 
 # methods
@@ -223,7 +223,12 @@ sub connect {
 
     # get a file descriptor
     $fd ||= fileno($sock);
-    croak "Net::SSH2::connect: can't get file descriptor for $sock" unless $fd;
+    croak "Net::SSH2::connect: can't get file descriptor for $sock"
+     unless defined $fd;
+    if ($^O eq 'Win32') {
+        require Win32API::File;
+        $fd = Win32API::File::FdGetOsFHandle($fd);
+    }
 
     # pass it in, do protocol
     return $self->_startup($fd, $sock);

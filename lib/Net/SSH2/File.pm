@@ -11,7 +11,8 @@ use Carp;
 
 sub PRINT {
     my $self = shift;
-    $self->write(join $,, @_)
+    my $sep = defined($,) ? $, : '';
+    $self->write(join $sep, @_)
 }
 
 sub PRINTF {

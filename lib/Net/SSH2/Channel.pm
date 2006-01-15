@@ -28,7 +28,8 @@ sub error {
 
 sub PRINT {
     my $self = shift;
-    $self->write(join $,, @_)
+    my $sep = defined($,) ? $, : '';
+    $self->write(join $sep, @_)
 }
 
 sub PRINTF {
@@ -146,6 +147,9 @@ Start a shell on the remote host; calls L<process>("shell").
 =head2 exec ( command )
 
 Execute the command on the remote host; calls L<process>("exec", command).
+Note that only one of these requests can succeed per channel (cp.
+L<perlfunc/exec>); if you want to run a series of commands, consider using
+L<shell> instead.
 
 =head2 subsystem ( name )
 
