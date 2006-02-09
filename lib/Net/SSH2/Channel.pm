@@ -4,6 +4,7 @@ use 5.008;
 use strict;
 use warnings;
 use Carp;
+use Data::Dumper;
 
 # methods
 
@@ -43,28 +44,37 @@ sub WRITE {
 }
 
 sub READLINE {
-    my $self = shift;
+    my ($self,$ext) = @_;
     return if $self->eof;
 
     if (wantarray) {
         my @lines;
         my $line;
-        push @lines, $line while defined($line = $self->READLINE);
+        push @lines, $line while defined($line = $self->READLINE($ext));
         return @lines;
     }
     
     my ($line, $eol, $c) = ('', $/);
-    $line .= $c while $line !~ /\Q$eol\E$/ and defined($c = $self->GETC);
+    $line .= $c while $line !~ /\Q$eol\E$/ and defined($c = $self->GETC($ext));
     length($line) ? $line : undef
 }
 
 sub GETC {
-    my $self = shift;
+    my ($self,$ext) = @_;
     my $buf;
-    my @poll = ({ handle => $self, events => 'in' });
-    return
-     unless $self->session->poll(250, \@poll) and $poll[0]->{revents}->{in};
-    $self->read($buf, 1) ? $buf : undef
+
+    my @poll; 
+    if (defined $ext) {
+       @poll = ({ handle => $self, events => 'ext' });
+       return
+        unless $self->session->poll(250, \@poll) and $poll[0]->{revents}->{ext};
+       $self->read($buf, 1,$ext) ? $buf : undef;
+    } else {
+       @poll = ({ handle => $self, events => 'in' });
+      return
+      unless $self->session->poll(250, \@poll) and $poll[0]->{revents}->{in};
+      $self->read($buf, 1) ? $buf : undef
+    }
 }
 
 sub READ {
