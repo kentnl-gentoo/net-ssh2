@@ -322,7 +322,7 @@ static int return_stat_attrs(SV** sp, LIBSSH2_SFTP_ATTRIBUTES* attrs,
 /* wrap a libSSH2 SFTP file */
 #define NEW_FILE(create) NEW_ITEM(SSH2_FILE, handle, create, sf)
 
-/* wrap a libSSH2 SFTP connection */
+/* wrap a libSSH2 SFTP directory */
 #define NEW_DIR(create) NEW_ITEM(SSH2_DIR, handle, create, sf)
 
 /* wrap a libSSH2 public key object */
@@ -1216,7 +1216,7 @@ CODE:
         goto again;
     }
 
-    pv_buffer[total] = '\0';
+    pv_buffer[count] = '\0';
     SvCUR_set(buffer, total);
     debug("- read %d total\n", total);
     XSRETURN_IV(total);

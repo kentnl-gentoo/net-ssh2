@@ -190,7 +190,7 @@ our %EXPORT_TAGS = (
 
 our @EXPORT_OK = @{$EXPORT_TAGS{all}};
 
-our $VERSION = '0.06';
+our $VERSION = '0.07';
 
 
 # methods
@@ -225,7 +225,7 @@ sub connect {
     $fd ||= fileno($sock);
     croak "Net::SSH2::connect: can't get file descriptor for $sock"
      unless defined $fd;
-    if ($^O eq 'Win32') {
+    if ($^O eq 'MSWin32') {
         require Win32API::File;
         $fd = Win32API::File::FdGetOsFHandle($fd);
     }
@@ -339,7 +339,7 @@ sub scp_put {
     $chan->blocking(1);
 
     my $buf;
-    my $count = $file->sysread($buf, $stat[2]);
+    my $count = $file->sysread($buf, $stat[7]);
     $self->error($!, $!), return unless defined $count;
     $self->error(0, "want $stat[7], have $count"), return
      unless $count == $stat[7];
@@ -476,10 +476,13 @@ Net::SSH2 - Support for the SSH 2 protocol via libSSH2.
 
   my $ssh2 = Net::SSH2->new();
 
+  $ssh2->connect('example.com') or die;
+
   if ($ssh2->auth_keyboard('fizban')) {
       my $chan = $ssh2->channel();
-      my $sftp = $ssh2->sftp;
+      $chan->exec('program');
 
+      my $sftp = $ssh2->sftp();
       my $fh = $sftp->open('/etc/passwd') or die;
       print $_ while <$fh>;
   }
@@ -838,8 +841,8 @@ Return public key interface object (see L<Net::SSH2::PublicKey>).
 
 =head2 poll ( timeout, arrayref of hashes )
 
-Pass in a timeout in milliseconds (0 to block) and an arrayref of hashes with
-the following keys:
+Pass in a timeout in milliseconds and an arrayref of hashes with the following
+keys:
 
 =over 4
 

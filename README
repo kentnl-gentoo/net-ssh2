@@ -53,7 +53,7 @@ svn://davidrobins.net/net-ssh2.
 If you are interested in making a change/fix, please discuss it first.  If you
 are unfamiliar with XS (perl C bindings), you should review the perlxs,
 perlapi, and perlcall perldoc pages to learn more.  The secure shell protocol
-us managed by the IETF secsh working group at
+is managed by the IETF secsh working group at
 http://www.ietf.org/html.charters/secsh-charter.html.  The source code of
 libSSH2 will also be instructive.
 
