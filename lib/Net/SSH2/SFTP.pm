@@ -102,7 +102,7 @@ David B. Robins, E<lt>dbrobins@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2005 by David B. Robins; all rights reserved.
+Copyright (C) 2005, 2006 by David B. Robins; all rights reserved.
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.8.0 or,

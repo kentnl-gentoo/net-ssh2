@@ -209,6 +209,7 @@ undef $pk;
 
 # (2) disconnect
 ok($chan->close(), 'close channel'); # optional step
+undef $fh;
 ok($ssh2->disconnect('leaving'), 'sent disconnect message');
 } # SKIP-auth
 } # SKIP-server
