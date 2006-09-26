@@ -61,6 +61,9 @@ TODO
 
 More examples for the example/ directory would be nice.
 
+Add get/put (file) methods to Net::SSH2::SFTP (as a shortcut, rather than 
+requiring open/read/write/close).
+
 COPYRIGHT AND LICENCE
 
 Copyright (C) 2005, 2006 by David B. Robins; all rights reserved.

@@ -3,6 +3,19 @@ Revision history for Perl extension Net::SSH2.
 Developer/maintainer: David B. Robins <dbrobins@cpan.org>.
 Project started 2005-10-23 in Redmond, Washington, USA.
 
+0.09  2006-09-25  dbr  (svn revision 50)
+        - scp_get fixes: mode mask, truncate on create (Stephen Clouse).
+        - Fix O_CREATE to O_CREAT in perldoc.
+        - Fix typo: wait_close -> wait_closed (rt.cpan.org #20117).
+        - Add example/ directory and read.pl example to manifest so that it
+          gets included in the distribution (Danny Thomas).
+        - Add Net::SSH2::debug class method to enable debugging output at
+          runtime (used to require recompile to enable).
+        - Have poll of empty array return 0 early to fix architectures that
+          return 0 for malloc(0) (L. Adrian Griffis).
+        - WARNING: latest libssh2 builds (0.13, 0.14) don't pass module
+          tests any more; if you have problems try 0.12 or earlier.
+
 0.08  2006-05-06  dbr  (svn revision 46)
         - Fix refcount bug (objects not destroyed) (Stephen Clouse).
 
@@ -14,7 +27,6 @@ Project started 2005-10-23 in Redmond, Washington, USA.
         - Update Net::SSH2 SYNOPSIS (thanks to Roy Smith).
         - NOTE: CPAN alias AWA (Vandana Awasthi) released an unauthorized
           "0.07" version of Net::SSH2; you can recognize it because it says
-
           0.06 in the changelog.  I have not been able to contact AWA.
 
 0.06  2006-01-14  dbr  (svn revision 42)

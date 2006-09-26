@@ -23,16 +23,6 @@
 #include "const-c.inc"
 
 
-/* debug */
-
-#if 1
-/* variadic macros aren't portable */
-static void debug(const char* _format, ...) {}
-#else
-#define debug warn
-#endif
-
-
 /* constants */
 
 #ifndef LIBSSH2_ERROR_NONE
@@ -173,8 +163,19 @@ typedef struct SSH2_PUBLICKEY {
 #endif  /* NET_SSH2_PUBLICKEY */
 } SSH2_PUBLICKEY;
 
+static int net_ss_debug_out = 0;
 static unsigned long net_ch_gensym = 0;
 static unsigned long net_fi_gensym = 0;
+
+/* debug output */
+static void debug(const char* format, ...) {
+    if (net_ss_debug_out) {
+        va_list va;
+        va_start(va, format);
+        vwarn(format, &va);
+        va_end(va);
+    }
+}
 
 /* set Net:SSH2-specific error message */
 static void set_error(SSH2* ss, int errcode, const char* errmsg) {
@@ -535,13 +536,14 @@ CODE:
         XSRETURN_EMPTY;
     }
     clear_error(RETVAL);
+    debug("Net::SSH2: created new object 0x%x\n", RETVAL);
 OUTPUT:
     RETVAL
 
 void
 net_ss_DESTROY(SSH2* ss)
 CODE:
-    debug("%s::DESTROY\n", class);
+    debug("%s::DESTROY object 0x%x\n", class, ss);
     clear_error(ss);
     libssh2_session_free(ss->session);
     SvREFCNT_dec(ss->socket);
@@ -550,7 +552,12 @@ CODE:
 #define NET_SSH2_STROF1(x) #x
 #define NET_SSH2_STROF(x) NET_SSH2_STROF1(x)
 #define LIBSSH2_APINO_STR NET_SSH2_STROF(LIBSSH2_APINO)
-    
+
+void
+net_ss_debug(SV*, SV* debug)
+CODE:
+    net_ss_debug_out = SvIV(debug) & 1;  /* allow for future flags */
+
 void
 net_ss_version(SV* name = NULL)
 CODE:
@@ -972,6 +979,8 @@ CODE:
     clear_error(ss);
     count = av_len(event) + 1;
     debug("%s::poll: timeout = %d, array[%d]\n", class, timeout, count);
+    if (!count)  // some architectures return null for malloc(0)
+        XSRETURN_IV(0);
     if (!(pollfd = malloc(sizeof(LIBSSH2_POLLFD) * count))) {
         set_error(ss, 0, "out of memory allocating pollfd structures");
         XSRETURN_EMPTY;

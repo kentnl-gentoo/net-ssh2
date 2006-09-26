@@ -122,7 +122,7 @@ sent; the connection should be closed.
 
 Close the channel (happens automatically on object destruction).
 
-=head2 wait_close
+=head2 wait_closed
 
 Wait for a remote close event.  Must have already seen remote EOF.
 

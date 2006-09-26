@@ -190,7 +190,7 @@ our %EXPORT_TAGS = (
 
 our @EXPORT_OK = @{$EXPORT_TAGS{all}};
 
-our $VERSION = '0.08';
+our $VERSION = '0.09';
 
 
 # methods
@@ -317,9 +317,10 @@ sub scp_get {
     $chan->write("\0");
     undef $chan;  # close
 
-    my $mode = $stat{mode} & 0x777;
+    my $mode = $stat{mode} & 0777;
     my $file = ref $path ? $path
-                         : IO::File->new($path, O_WRONLY | O_CREAT, $mode);
+                         : IO::File->new($path, O_WRONLY | O_CREAT | O_TRUNC,
+																				 $mode);
     return unless $file;
     return $file->syswrite($buf, $count) == $count;
 }
@@ -865,6 +866,11 @@ the integer value.
 =back
 
 Returns undef on error, or the number of active objects.
+
+=head2 debug ( state )
+
+Class method (affects all Net::SSH2 objects).  Pass 1 to enable, 0 to disable.
+Debug output is sent to stderr via C<warn>.
 
 =head1 SEE ALSO
 
