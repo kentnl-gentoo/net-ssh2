@@ -177,6 +177,17 @@ static void debug(const char* format, ...) {
     }
 }
 
+/* libssh2 allocator thunks */
+LIBSSH2_ALLOC_FUNC(local_alloc) {
+    return Perl_malloc(count);
+}
+LIBSSH2_REALLOC_FUNC(local_realloc) {
+    return Perl_realloc(ptr, count);
+}
+LIBSSH2_FREE_FUNC(local_free) {
+    Perl_mfree(ptr);
+}
+
 /* set Net:SSH2-specific error message */
 static void set_error(SSH2* ss, int errcode, const char* errmsg) {
     ss->errcode = errcode;
@@ -344,7 +355,7 @@ static LIBSSH2_USERAUTH_KBDINT_RESPONSE_FUNC(cb_kbdint_response_password) {
 
     /* single prompt, no echo: assume it's a password request */
     pv_password = SvPV(ss->sv_tmp, len_password);
-    responses[0].text = malloc(len_password);
+    responses[0].text = Perl_malloc(len_password);
     memcpy(responses[0].text, pv_password, len_password);
     responses[0].length = len_password;
 }
@@ -378,7 +389,7 @@ static LIBSSH2_USERAUTH_KBDINT_RESPONSE_FUNC(cb_kbdint_response_callback) {
     for (i = 0; i < count; ++i) {
         STRLEN len_response;
         const char* pv_response = SvPV(ST(i), len_response);
-        responses[i].text = malloc(len_response);
+        responses[i].text = Perl_malloc(len_response);
         memcpy(responses[i].text, pv_response, len_response);
         responses[i].length = len_response;
     }
@@ -404,7 +415,7 @@ static LIBSSH2_PASSWD_CHANGEREQ_FUNC(cb_password_change_callback) {
     if (count > 0) {
         STRLEN len_password;
         const char* pv_password = SvPV(ST(0), len_password);
-        *newpw = malloc(len_password);
+        *newpw = Perl_malloc(len_password);
         memcpy(*newpw, pv_password, len_password);
         *newpw_len = len_password;
     }
@@ -529,7 +540,7 @@ CODE:
     Newz(0/*id*/, RETVAL, 1, SSH2);
     if (RETVAL) {
         RETVAL->session = libssh2_session_init_ex(
-         NULL/*allocfunc*/, NULL/*freefunc*/, NULL/*reallocfunc*/, RETVAL);
+         local_alloc, local_free, local_realloc, RETVAL);
     }
     if (!RETVAL || !RETVAL->session) {
         Safefree(RETVAL);
@@ -754,7 +765,7 @@ PPCODE:
         count = split_comma(sp, auth);
     else
         PUSHs(sv_2mortal(newSVpv(auth, 0)));
-    free(auth);
+    Perl_mfree(auth);
     XSRETURN(count);
 
 void
@@ -781,7 +792,7 @@ CODE:
     if (!password || !SvPOK(password)) {
         char* auth = libssh2_userauth_list(ss->session,
          pv_username, len_username);
-        free(auth);
+        Perl_mfree(auth);
         XSRETURN_IV(!auth && libssh2_userauth_authenticated(ss->session));
     }
 
@@ -981,7 +992,7 @@ CODE:
     debug("%s::poll: timeout = %d, array[%d]\n", class, timeout, count);
     if (!count)  // some architectures return null for malloc(0)
         XSRETURN_IV(0);
-    if (!(pollfd = malloc(sizeof(LIBSSH2_POLLFD) * count))) {
+    if (!(pollfd = Perl_malloc(sizeof(LIBSSH2_POLLFD) * count))) {
         set_error(ss, 0, "out of memory allocating pollfd structures");
         XSRETURN_EMPTY;
     }
@@ -1520,7 +1531,7 @@ CODE:
     pv_real = SvPVX(real);
 
     count = libssh2_sftp_symlink_ex(sf->sftp,
-     pv_path, len_path, pv_real, MAXPATHLEN, LIBSSH2_SFTP_READLINK);
+     pv_path, len_path, pv_real, MAXPATHLEN, LIBSSH2_SFTP_REALPATH);
 
     if (count < 0) {
         SvREFCNT_dec(real);
@@ -1664,8 +1675,8 @@ PPCODE:
     count = libssh2_sftp_readdir(di->handle, pv_buffer, MAXPATHLEN, &attrs);
 
     if (count <= 0) {
-        XSRETURN_EMPTY;
         SvREFCNT_dec(buffer);
+        XSRETURN_EMPTY;
     }
     pv_buffer[count] = '\0';
     SvCUR_set(buffer, count);
@@ -1704,7 +1715,7 @@ CODE:
     pv_blob = SvPV(blob, len_blob);
 
     num_attrs = items - 4;
-    if (!(attrs = malloc(sizeof(*attrs) * num_attrs))) {
+    if (!(attrs = Perl_malloc(sizeof(*attrs) * num_attrs))) {
         set_error(pk->ss, 0, "out of memory allocating attribute structures");
         XSRETURN_EMPTY;
     }
@@ -1737,7 +1748,7 @@ CODE:
     success = !libssh2_publickey_add_ex(pk->pkey,
      pv_name, len_name, pv_blob, len_blob, overwrite, num_attrs, attrs);
 
-    free(attrs);
+    Perl_mfree(attrs);
     XSRETURN_IV(!success);
     
 void

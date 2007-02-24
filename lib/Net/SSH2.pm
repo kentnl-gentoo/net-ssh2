@@ -1,6 +1,6 @@
 package Net::SSH2;
 
-use 5.008;
+use 5.006;
 use strict;
 use warnings;
 use Carp;
@@ -11,7 +11,6 @@ use AutoLoader;
 use Socket;
 use IO::File;
 use File::Basename;
-use Term::ReadKey;
 
 our @ISA = qw(Exporter);
 
@@ -190,7 +189,7 @@ our %EXPORT_TAGS = (
 
 our @EXPORT_OK = @{$EXPORT_TAGS{all}};
 
-our $VERSION = '0.09';
+our $VERSION = '0.10';
 
 
 # methods
@@ -304,25 +303,31 @@ sub scp_get {
     my $chan = $self->_scp_get($remote, \%stat);
     return unless $chan;
 
-    my $buf = '';
     $chan->blocking(1);
-    my $count = $chan->read($buf, $stat{size});
-    return unless defined $count;
-    $self->error(0, "want $stat{size}, have $count"), return
-     unless $count == $stat{size};
+
+    # read and commit blocks until we're finished
+    my $mode = $stat{mode} & 0777;
+    my $file = ref $path ? $path
+       : IO::File->new($path, O_WRONLY | O_CREAT | O_TRUNC, $mode);
+    return unless $file;
+
+    for (my ($size, $count) = ($stat{size}); $size > 0; $size -= $count) {
+      my $buf = '';
+      my $block = ($size > 8192) ? 8192 : $size;
+      $count = $chan->read($buf, $block);
+      return unless defined $count;
+      $self->error(0, "read $block bytes but only got $count"), return
+       unless $count == $block;
+      $self->error(0, "error writing $count bytes to file"), return
+       unless $file->syswrite($buf, $count) == $count;
+    }
 
     # process SCP acknowledgment and send same
     my $eof;
     $chan->read($eof, 1);
     $chan->write("\0");
     undef $chan;  # close
-
-    my $mode = $stat{mode} & 0777;
-    my $file = ref $path ? $path
-                         : IO::File->new($path, O_WRONLY | O_CREAT | O_TRUNC,
-																				 $mode);
-    return unless $file;
-    return $file->syswrite($buf, $count) == $count;
+    return 1;
 }
 
 sub scp_put {
@@ -339,20 +344,24 @@ sub scp_put {
     return unless $chan;
     $chan->blocking(1);
 
-    my $buf;
-    my $count = $file->sysread($buf, $stat[7]);
-    $self->error($!, $!), return unless defined $count;
-    $self->error(0, "want $stat[7], have $count"), return
-     unless $count == $stat[7];
-    die 'sysread mismatch' unless length $buf == $count;
+    # read and transmit blocks until we're finished
+    for (my ($size, $count) = ($stat[7]); $size > 0; $size -= $count) {
+      my $buf;
+      my $block = ($size > 8192) ? 8192 : $size;
+      $count = $file->sysread($buf, $block);
+      $self->error($!, $!), return unless defined $count;
+      $self->error(0, "want $block, have $count"), return
+       unless $count == $block;
+      die 'sysread mismatch' unless length $buf == $count;
+      $self->error(0, "error writing $count bytes to channel"), return
+       unless $chan->write($buf) == $count;
+    }
 
-    # send file and send/receive SCP acknowledgement
-    my $success = $chan->write($buf) == $count;
+    # send/receive SCP acknowledgement
     $chan->write("\0");
     my $eof;
     $chan->read($eof, 1);
-
-    $success
+    return 1;
 }
 
 my %Event;
@@ -426,9 +435,9 @@ sub _cb_kbdint_response_default {
     for my $prompt(@prompt) {
         print STDERR "$prompt->{text}";
 
-        Term::ReadKey::ReadMode 'noecho' unless $prompt->{echo};
-        chomp(my $value = Term::ReadKey::ReadLine 0);
-        Term::ReadKey::ReadMode 'normal' unless $prompt->{echo};
+        Term::ReadKey::ReadMode('noecho') unless $prompt->{echo};
+        chomp(my $value = Term::ReadKey::ReadLine(0));
+        Term::ReadKey::ReadMode('normal') unless $prompt->{echo};
         push @out, $value;
     }
     @out

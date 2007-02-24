@@ -1,6 +1,5 @@
 package Net::SSH2::Channel;
 
-use 5.008;
 use strict;
 use warnings;
 use Carp;

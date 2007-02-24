@@ -1,6 +1,5 @@
 package Net::SSH2::SFTP;
 
-use 5.008;
 use strict;
 use warnings;
 use Carp;
@@ -34,8 +33,7 @@ Returns a Net::SSH2::File object on success.
 
 =head2 opendir ( dir )
 
-Open a directory on the remote host; returns a Net::SSH2::Directory object
-on success.
+Open a directory on the remote host; returns a Net::SSH2::Dir object on success.
 
 =head2 unlink ( file )
 

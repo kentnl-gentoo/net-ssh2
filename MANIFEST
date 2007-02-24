@@ -12,6 +12,7 @@ lib/Net/SSH2/SFTP.pm
 lib/Net/SSH2/File.pm
 lib/Net/SSH2/Dir.pm
 lib/Net/SSH2/Listener.pm
+lib/Net/SSH2/PublicKey.pm
 example/read.pl
 fallback/const-c.inc
 fallback/const-xs.inc
