@@ -3,6 +3,19 @@ Revision history for Perl extension Net::SSH2.
 Developer/maintainer: David B. Robins <dbrobins@cpan.org>.
 Project started 2005-10-23 in Redmond, Washington, USA.
 
+0.18  2007-11-10  dbr  (svn revision 56)
+        - Note version change: synced to libssh2.  Should be compatible with
+           libssh2 0.16+, including future versions provided API remains stable.
+        - Documented Net::SSH2::version class method.
+        - Removed references to LIBSSH2_APINO (removed in libssh2 0.16);
+           fixes rt.cpan.org #28722.
+        - Fixed memory leak in poll (rt.cpan.org #27368, based on patch
+           from David Sullivan).
+        - Fixed 0-valued POSIX flag translation bug (based on patch from Joseph
+           Galbraith).
+        - Check lib64 as well as lib for libraries (patch from Leo Eraly).
+        - Add blocking method to Net::SSH2 object.
+
 0.10  2007-02-24  dbr  (svn revision 52)
         - Net::SSH2::SFTP::realpath fix (Hugues Lafarge).
         - Make compatible with perl 5.6 (rt.cpan.org #22821, SISYPHUS); required

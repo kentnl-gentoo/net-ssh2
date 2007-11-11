@@ -27,10 +27,12 @@ is(LIBSSH2_ERROR_SOCKET_NONE(), -1, 'LIBSSH2_* constants');
 
 # (4) version
 my $version = $ssh2->version();
-ok($version >= 0.11, "libSSH2 version $version > 0.11");
-my ($version2, $apino, $banner) = $ssh2->version();
+ok($version >= 0.16, "libSSH2 version $version > 0.16");
+my ($version2, $vernum, $banner) = $ssh2->version();
 is($version, $version2, 'list version match');
-like($apino, qr/^\d{12}$/, 'API date yyyymmddhhmm');
+my $major = int($version);
+ok(($vernum >> 8) == ($major << 8) + ($version - $major) * 100,
+ 'decimal version matches');
 is($banner, "SSH-2.0-libssh2_$version", "banner is $banner");
 
 # (2) timeout
@@ -109,6 +111,7 @@ ok($ssh2->callback(disconnect => sub { warn "SSH_MSG_DISCONNECT!\n"; }),
  'set disconnect callback');
 
 # (2) SFTP
+$ssh2->blocking(1);  # creating channel may block
 my $sftp = $ssh2->sftp();
 isa_ok($sftp, 'Net::SSH2::SFTP', 'SFTP session');
 is($sftp->session, $ssh2, 'verify session');
@@ -185,7 +188,9 @@ ok($sftp->rmdir($dir), "remove directory $dir");
 undef $sftp; pass('close SFTP session');
 
 # (5) poll
+$chan = $ssh2->channel();
 ok($chan->exec('ls -d /'), "exec 'ls -d /'");
+$chan->blocking(0);  # don't block, or we'll wait forever
 my @poll = { handle => $chan, events => ['in'] };
 ok($ssh2->poll(250, \@poll), 'got poll response');
 ok($poll[0]->{revents}->{in}, 'got input event');
@@ -195,6 +200,7 @@ $line = <$chan>;
 ok(!$line, 'no more lines');
 
 # (4) public key
+$ssh2->blocking(1);  # creating channel may block
 my $pk = $ssh2->public_key;
 SKIP: {
 skip ' - public key infrastructure not present', 4 unless $pk;

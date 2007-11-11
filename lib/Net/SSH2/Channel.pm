@@ -106,7 +106,8 @@ with the values to set.  Returns the number of successful sets.
 
 =head2 blocking ( flag )
 
-Enable or disable blocking.
+Enable or disable blocking.  Note that this is currently implemented in libssh2
+by setting a per-session flag; it's equivalent to L<Net::SSH2::blocking>.
 
 =head2 eof
 

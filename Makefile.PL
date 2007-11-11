@@ -20,6 +20,9 @@ unless($lib and $inc) {
         $lib ||= "$prefix/lib"
          if -f "$prefix/lib/libssh2$Config{_a}" or
             -f "$prefix/lib/libssh2.$Config{so}";
+        $lib ||= "$prefix/lib64"
+         if -f "$prefix/lib64/libssh2$Config{_a}" or
+            -f "$prefix/lib64/libssh2.$Config{so}";
         $inc ||= "$prefix/include"
          if -f "$prefix/include/libssh2.h";
         last if $lib and $inc;

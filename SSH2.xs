@@ -12,12 +12,7 @@
 
 #include <libssh2.h>
 #include <libssh2_sftp.h>
-
-/* include public key support if available */
-#if LIBSSH2_APINO >= 200507211326  /* 0.12+ */
 #include <libssh2_publickey.h>
-#define NET_SSH2_PUBLICKEY
-#endif  /* LIBSSH2_APINO >= 200507211326 */
 
 
 #include "const-c.inc"
@@ -67,7 +62,8 @@ const char* libssh2_error[] = {
     "METHOD_NOT_SUPPORTED",
     "INVAL",
     "INVALID_POLL_TYPE",
-	  "PUBLICKEY_PROTOCOL"
+	"PUBLICKEY_PROTOCOL",
+    "EAGAIN"
 };
 
 /* SSH_FX_* values; from 0 continuing positive */
@@ -158,9 +154,7 @@ typedef struct SSH2_DIR {
 typedef struct SSH2_PUBLICKEY {
     SSH2* ss;
     SV* sv_ss;
-#ifdef NET_SSH2_PUBLICKEY
     LIBSSH2_PUBLICKEY* pkey;
-#endif  /* NET_SSH2_PUBLICKEY */
 } SSH2_PUBLICKEY;
 
 static int net_ss_debug_out = 0;
@@ -547,9 +541,17 @@ CODE:
         XSRETURN_EMPTY;
     }
     clear_error(RETVAL);
+    /*libssh2_trace(RETVAL->session, -1);*/  /* enable tracing if debug build */
     debug("Net::SSH2: created new object 0x%x\n", RETVAL);
 OUTPUT:
     RETVAL
+
+void
+net_ss_blocking(SSH2* ss, SV* blocking)
+CODE:
+    clear_error(ss);
+    libssh2_session_set_blocking(ss->session, SvTRUE(blocking));
+    XSRETURN_IV(1);
 
 void
 net_ss_DESTROY(SSH2* ss)
@@ -559,10 +561,6 @@ CODE:
     libssh2_session_free(ss->session);
     SvREFCNT_dec(ss->socket);
     Safefree(ss);
-
-#define NET_SSH2_STROF1(x) #x
-#define NET_SSH2_STROF(x) NET_SSH2_STROF1(x)
-#define LIBSSH2_APINO_STR NET_SSH2_STROF(LIBSSH2_APINO)
 
 void
 net_ss_debug(SV*, SV* debug)
@@ -578,15 +576,11 @@ CODE:
     case G_ARRAY:
         EXTEND(SP, 3);
         ST(0) = sv_2mortal(newSVpv(LIBSSH2_VERSION, 0));
-        ST(1) = sv_2mortal(newSVpv(LIBSSH2_APINO_STR, 0));
+        ST(1) = sv_2mortal(newSVuv(LIBSSH2_VERSION_NUM));
         ST(2) = sv_2mortal(newSVpv(LIBSSH2_SSH_DEFAULT_BANNER, 0));
         XSRETURN(3);
     }
 
-#undef LIBSSH2_APINO_STR
-#undef NET_SSH2_STROF
-#undef NET_SSH2_STROF1
-    
 void
 net_ss_banner(SSH2* ss, SV* banner)
 PREINIT:
@@ -1043,14 +1037,18 @@ CODE:
         
     changed = libssh2_poll(pollfd, count, timeout);
     debug("- libssh2_poll returned %d\n", changed);
-    if (changed < 0)
-        XSRETURN_EMPTY;
 
+    if (changed < 0)
+        count = 0;
     for (i = 0; i < count; ++i) {
         HV* hv = (HV*)SvRV(*av_fetch(event, i, 0/*lval*/));
         hv_store(hv, "revents", 7, newSViv(pollfd[i].revents), 0/*hash*/);
         debug("- [%d] revents %d\n", i, pollfd[i].revents);
     }
+
+    Perl_mfree(pollfd);
+    if (changed < 0)
+        XSRETURN_EMPTY;
     XSRETURN_IV(changed);
 
 SSH2_SFTP*
@@ -1065,12 +1063,7 @@ SSH2_PUBLICKEY*
 net_ss_public_key(SSH2* ss)
 CODE:
     clear_error(ss);
-#ifdef NET_SSH2_PUBLICKEY
     NEW_PUBLICKEY(libssh2_publickey_init(ss->session));
-#else  /* !NET_SSH2_PUBLICKEY */
-    set_error(ss, 0, "public key support requires libssh2 0.12+");
-    XSRETURN_EMPTY;
-#endif  /* NET_SSH2_PUBLICKEY */
 OUTPUT:
     RETVAL
 
@@ -1338,7 +1331,8 @@ CODE:
     }
 
 #define XLATFLAG(posix, fxf) do { \
-    if (flags & posix) { \
+    if (flags & posix || \
+     l_flags == 0 && posix == 0 && flags == posix /* 0-valued flag */) { \
         l_flags |= fxf; \
         flags &= ~posix; \
     } \
@@ -1690,8 +1684,6 @@ PROTOTYPES: DISABLE
 
 #define class "Net::SSH2::PublicKey"
 
-#ifdef NET_SSH2_PUBLICKEY
-
 void
 net_pk_DESTROY(SSH2_PUBLICKEY* pk)
 CODE:
@@ -1809,5 +1801,4 @@ PPCODE:
 
 #undef class
 
-#endif  /* NET_SSH2_PUBLICKEY */
-
+# vim: set et ts=4:

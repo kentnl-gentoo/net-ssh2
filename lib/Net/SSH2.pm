@@ -189,7 +189,7 @@ our %EXPORT_TAGS = (
 
 our @EXPORT_OK = @{$EXPORT_TAGS{all}};
 
-our $VERSION = '0.10';
+our $VERSION = '0.18';
 
 
 # methods
@@ -303,9 +303,8 @@ sub scp_get {
     my $chan = $self->_scp_get($remote, \%stat);
     return unless $chan;
 
-    $chan->blocking(1);
-
     # read and commit blocks until we're finished
+    $chan->blocking(1);
     my $mode = $stat{mode} & 0777;
     my $file = ref $path ? $path
        : IO::File->new($path, O_WRONLY | O_CREAT | O_TRUNC, $mode);
@@ -478,7 +477,7 @@ __END__
 
 =head1 NAME
 
-Net::SSH2 - Support for the SSH 2 protocol via libSSH2.
+Net::SSH2 - Support for the SSH 2 protocol via libssh2.
 
 =head1 SYNOPSIS
 
@@ -517,6 +516,13 @@ Create new SSH2 object.
 =head2 banner ( text )
 
 Set the SSH2 banner text sent to the remote host (prepends required "SSH-2.0-").
+
+=head2 version
+
+In scalar context, returns libssh2 version/patch e.g. 0.18 or "0.18.0-20071110".
+In list context, returns that version plus the numeric version (major, minor,
+and patch, each encoded as 8 bits, e.g. 0x001200 for version 0.18) and the
+default banner text (e.g. "SSH-2.0-libssh2_0.18.0-20071110").
 
 =head2 error
 
@@ -880,6 +886,11 @@ Returns undef on error, or the number of active objects.
 
 Class method (affects all Net::SSH2 objects).  Pass 1 to enable, 0 to disable.
 Debug output is sent to stderr via C<warn>.
+
+=head2 blocking ( flag )
+
+Enable or disable blocking.  Note that if blocking is disabled, methods that
+create channels may fail, e.g. C<channel>, C<SFTP>, C<scp_*>.
 
 =head1 SEE ALSO
 
