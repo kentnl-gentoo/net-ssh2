@@ -29,9 +29,10 @@ O_CHANNEL
     const char* name = form("_GEN_%ld", (long)net_ch_gensym++);
     SvUPGRADE((SV*)gv, SVt_PVGV);
     SvUPGRADE((SV*)io, SVt_PVIO);
-    SvIVX(gv) = PTR2IV($var);
+    /* SvIVX(gv) = PTR2IV($var); */
     gv_init(gv, gv_stashpv("Net::SSH2::Channel", 0/*create*/),
      name, strlen(name), 0/*multi*/);
+    GvSV(gv) = newSViv(PTR2IV($var));
     GvIOp(gv) = io;
     sv_magic((SV*)io, newRV((SV*)gv), PERL_MAGIC_tiedscalar, Nullch, 0);
     }
@@ -49,9 +50,10 @@ O_FILE
     const char* name = form("_GEN_%ld", (long)net_fi_gensym++);
     SvUPGRADE((SV*)gv, SVt_PVGV);
     SvUPGRADE((SV*)io, SVt_PVIO);
-    SvIVX(gv) = PTR2IV($var);
+    /* SvIVX(gv) = PTR2IV($var); */
     gv_init(gv, gv_stashpv("Net::SSH2::File", 0/*create*/),
      name, strlen(name), 0/*multi*/);
+    GvSV(gv) = newSViv(PTR2IV($var));
     GvIOp(gv) = io;
     sv_magic((SV*)io, newRV((SV*)gv), PERL_MAGIC_tiedscalar, Nullch, 0);
     }
@@ -80,7 +82,8 @@ O_SESSION
 
 O_CHANNEL
     if(sv_isobject($arg) && (SvTYPE(SvRV($arg)) == SVt_PVGV))
-        $var = ($type)SvIVX((SV*)SvRV($arg));
+        /* $var = ($type)SvIVX((SV*)SvRV($arg)); */
+        $var = ($type)SvIVX(GvSV((GV*)SvRV($arg)));
     else
         croak(\"${Package}::$func_name() - invalid channel object\");
 
@@ -98,7 +101,8 @@ O_SFTP
 
 O_FILE
     if(sv_isobject($arg) && (SvTYPE(SvRV($arg)) == SVt_PVGV))
-        $var = ($type)SvIVX((SV*)SvRV($arg));
+        /* $var = ($type)SvIVX((SV*)SvRV($arg)); */
+        $var = ($type)SvIVX(GvSV((GV*)SvRV($arg)));
     else
         croak(\"${Package}::$func_name() - invalid SFTP file object\");
 

@@ -189,7 +189,7 @@ our %EXPORT_TAGS = (
 
 our @EXPORT_OK = @{$EXPORT_TAGS{all}};
 
-our $VERSION = '0.18';
+our $VERSION = '0.19';
 
 
 # methods
@@ -907,6 +907,7 @@ L<Net::SSH::Perl>.
 =head1 AUTHOR
 
 David B. Robins, E<lt>dbrobins@cpan.orgE<gt>
+Pavel Y. Odintsov apply patch from http://rt.cpan.org/Public/Bug/Display.html?id=36614 for work with Perl 5.10
 
 =head1 COPYRIGHT AND LICENSE
 

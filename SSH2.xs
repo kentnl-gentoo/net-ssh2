@@ -1006,7 +1006,8 @@ CODE:
                 debug("- [%d] = channel\n", i);
                 pollfd[i].type = LIBSSH2_POLLFD_CHANNEL;
                 pollfd[i].fd.channel =
-                 ((SSH2_CHANNEL*)SvIVX(SvRV(*handle)))->channel;
+                /* ((SSH2_CHANNEL*)SvIVX(SvRV(*handle)))->channel; */
+                 ((SSH2_CHANNEL*)SvIVX(GvSV((GV*)SvRV(*handle))))->channel;
             } else if(strEQ(package, "Net::SSH2::Listener")) {
                 debug("- [%d] = listener\n", i);
                 pollfd[i].type = LIBSSH2_POLLFD_LISTENER;
