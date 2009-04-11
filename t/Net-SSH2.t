@@ -31,8 +31,15 @@ ok($version >= 0.16, "libSSH2 version $version > 0.16");
 my ($version2, $vernum, $banner) = $ssh2->version();
 is($version, $version2, 'list version match');
 my $major = int($version);
-ok(($vernum >> 8) == ($major << 8) + ($version - $major) * 100,
- 'decimal version matches');
+
+if ($major > 0) {
+  ok(($vernum >> 8) == ($major << 8) + ($version - $major) * 10,
+   'decimal version matches');
+} else {
+  ok(($vernum >> 8) == ($major << 8) + ($version - $major) * 100,
+   'decimal version matches');
+}
+
 is($banner, "SSH-2.0-libssh2_$version", "banner is $banner");
 
 # (2) timeout
@@ -85,7 +92,9 @@ ok(!$ssh2->auth_ok, 'not authenticated yet');
 
 # (2) authenticate
 @auth = $pass ? (password => $pass) : (interact => 1);
-my $type = $ssh2->auth(username => $user, @auth);
+my $type = $ssh2->auth(username => $user, @auth,
+  publickey  => "$ENV{HOME}/.ssh/id_dsa.pub",
+  privatekey => "$ENV{HOME}/.ssh/id_dsa");
 ok($type, "authenticated via: $type");
 SKIP: { # SKIP-auth
 skip '- failed to authenticate with server', 37 unless $ssh2->auth_ok;
@@ -178,7 +187,8 @@ undef $dh;
 $fh = $sftp->open($altname);
 isa_ok($fh, 'Net::SSH2::File', 'opened file');
 scalar <$fh> for 1..2;
-chomp(my $line = <$fh>);
+my $line = <$fh>;
+chomp $line;
 is($line, '# THIS LINE WILL BE READ BY A TEST BELOW', "read '$line'");
 #undef $fh;  # don't undef it, ensure reference counts work properly
 
@@ -194,7 +204,8 @@ $chan->blocking(0);  # don't block, or we'll wait forever
 my @poll = { handle => $chan, events => ['in'] };
 ok($ssh2->poll(250, \@poll), 'got poll response');
 ok($poll[0]->{revents}->{in}, 'got input event');
-chomp($line = <$chan>);
+$line = <$chan>;
+chomp $line;
 is($line, '/', "got result '/'");
 $line = <$chan>;
 ok(!$line, 'no more lines');

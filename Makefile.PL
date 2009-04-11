@@ -16,7 +16,7 @@ my $inc = '';
 # try to find libSSH2 if we're not given a location
 unless($lib and $inc) {
     for my $prefix($Config{siteprefixexp},$Config{prefixexp},
-     '/usr','/usr/local','/opt') {
+     '/usr','/usr/local','/opt',$ENV{HOME}) {
         $lib ||= "$prefix/lib"
          if -f "$prefix/lib/libssh2$Config{_a}" or
             -f "$prefix/lib/libssh2.$Config{so}";
