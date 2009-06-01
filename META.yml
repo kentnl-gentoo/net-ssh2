@@ -1,24 +1,41 @@
---- #YAML:1.0
-name:               Net-SSH2
-version:            0.19
-abstract:           Support for the SSH 2 protocol via libssh2.
+---
+abstract: 'Support for the SSH 2 protocol via libssh2.'
 author:
-    - David B. Robins <dbrobins@cpan.org>
-license:            unknown
-distribution_type:  module
-configure_requires:
-    ExtUtils::MakeMaker:  0
+  - 'David B. Robins, <dbrobins@cpan.org>'
 build_requires:
-    ExtUtils::MakeMaker:  0
-requires:
-    File::Basename:  0
-    IO::File:        0
-    Socket:          0
-no_index:
-    directory:
-        - t
-        - inc
-generated_by:       ExtUtils::MakeMaker version 6.50
+  ExtUtils::MakeMaker: 6.42
+configure_requires:
+  ExtUtils::MakeMaker: 6.42
+distribution_type: module
+generated_by: 'Module::Install version 0.91'
+license: perl
 meta-spec:
-    url:      http://module-build.sourceforge.net/META-spec-v1.4.html
-    version:  1.4
+  url: http://module-build.sourceforge.net/META-spec-v1.4.html
+  version: 1.4
+name: Net-SSH2
+no_index:
+  directory:
+    - example
+    - inc
+    - t
+provides:
+  Net::SSH2:
+    file: lib/Net/SSH2.pm
+    version: 0.20
+  Net::SSH2::Channel:
+    file: lib/Net/SSH2/Channel.pm
+  Net::SSH2::Dir:
+    file: lib/Net/SSH2/Dir.pm
+  Net::SSH2::File:
+    file: lib/Net/SSH2/File.pm
+  Net::SSH2::Listener:
+    file: lib/Net/SSH2/Listener.pm
+  Net::SSH2::PublicKey:
+    file: lib/Net/SSH2/PublicKey.pm
+  Net::SSH2::SFTP:
+    file: lib/Net/SSH2/SFTP.pm
+requires:
+  perl: 5.6.0
+resources:
+  license: http://dev.perl.org/licenses/
+version: 0.20

@@ -1,68 +1,60 @@
-use 5.006;
-use ExtUtils::MakeMaker;
-
-# we need libSSH2; check for it, if missing, try to install it
+use inc::Module::Install;
 use Cwd;
 use Config;
+
+# override library and include directory here if desired
+my $lib = '';
+my $inc = '';
+my $extra_libs = '-lz -lssl -lcrypto';
 
 # Windows, as usual, is a special case
 my $win32 = ($^O eq 'MSWin32');
 my @define = $win32 ? (DEFINE => '-DLIBSSH2_WIN32') : ();
 
-# override library and include directory here if desired
-my $lib = '';
-my $inc = '';
+name 'Net-SSH2';
+all_from 'lib/Net/SSH2.pm';
+perl_version '5.006000';
 
-# try to find libSSH2 if we're not given a location
-unless($lib and $inc) {
-    for my $prefix($Config{siteprefixexp},$Config{prefixexp},
-     '/usr','/usr/local','/opt',$ENV{HOME}) {
-        $lib ||= "$prefix/lib"
-         if -f "$prefix/lib/libssh2$Config{_a}" or
-            -f "$prefix/lib/libssh2.$Config{so}";
-        $lib ||= "$prefix/lib64"
-         if -f "$prefix/lib64/libssh2$Config{_a}" or
-            -f "$prefix/lib64/libssh2.$Config{so}";
-        $inc ||= "$prefix/include"
-         if -f "$prefix/include/libssh2.h";
-        last if $lib and $inc;
-    }
-}
-
-unless ($lib and $inc) {
-    my $missing = join ' or ', $lib ? () : 'libssh2', $inc ? () : 'libssh2.h';
-    print <<ERROR;
-I can't find $missing.
-
-Either libSSH2 is not installed, or it is installed incorrectly.  LibSSH2 is
-required by Net::SSH2.  You can download it from http://www.libssh2.org; you
-may also need OpenSSL, which can be obtained from http://www.openssl.org.
-
-ERROR
-    die "Quitting since I can't find $missing";
-}
-
-$lib = "-L$lib -lssh2";
-$inc = "-I$inc";
-print "Net::SSH2: using library $lib and include path $inc.\n";
-
-# See lib/ExtUtils/MakeMaker.pm for details of how to influence
-# the contents of the Makefile that is written.
-WriteMakefile(
-    NAME              => 'Net::SSH2',
-    VERSION_FROM      => 'lib/Net/SSH2.pm', # finds $VERSION
-    PREREQ_PM         => {
-                            'Socket'            => 0,
-                            'IO::File'          => 0,
-                            'File::Basename'    => 0,
-                         },
-    ($] >= 5.005 ?     ## Add these new keywords supported since 5.005
-      (ABSTRACT_FROM  => 'lib/Net/SSH2.pm', # retrieve abstract from module
-       AUTHOR         => 'David B. Robins <dbrobins@cpan.org>') : ()),
-    LIBS              => [$lib],
-    INC               => "$inc -I.",
-    @define,
+my @search_paths = (
+  $Config{siteprefixexp}, $Config{prefixexp},
+  '/usr', '/usr/local', '/opt',
+  $ENV{HOME}
 );
+
+my @search_libs = map "$_/lib", @search_paths;
+my @search_incs = map "$_/include", @search_paths;
+
+print <<'EOF';
+
+The libssh2 library is required by this module.  If you don't have it, you can
+download it from http://www.libssh2.org; you may also need OpenSSL, which can be
+obtained from http://www.openssl.org.
+
+On Debian do:
+sudo aptitude install libssh2-1-dev
+
+EOF
+
+checklibs 
+    lib => 'ssh2',
+    header => 'libssh2.h',
+    libpath => [@search_libs, $lib],
+    incpath => [@search_incs, $inc];
+
+if (!$lib && !$inc) {
+    $lib = (join ' ', map "-L$_", @search_libs) . " -lssh2 $extra_libs";
+    $inc =  join ' ', map "-I$_", @search_incs;
+} else {
+    $lib = "-L$lib -lssh2 $extra_libs" if $lib;
+    $inc = "-I$inc" if $inc;
+}
+
+auto_provides;
+libs $lib;
+inc "$inc -I.";
+makemaker_args @define;
+WriteAll;
+
 if  (eval {require ExtUtils::Constant; 1}) {
   # If you edit these definitions to change the constants used by this module,
   # you will need to use the generated const-c.inc and const-xs.inc
