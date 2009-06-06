@@ -1,5 +1,7 @@
 Changes
 example/read.pl
+fallback/const-c.inc
+fallback/const-xs.inc
 inc/Devel/CheckLib.pm
 inc/Module/Install.pm
 inc/Module/Install/Base.pm
