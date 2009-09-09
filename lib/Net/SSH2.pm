@@ -188,7 +188,8 @@ our %EXPORT_TAGS = (
 
 our @EXPORT_OK = @{$EXPORT_TAGS{all}};
 
-our $VERSION = '0.25';
+our $VERSION = '0.26';
+$VERSION = eval $VERSION;
 
 # methods
 
