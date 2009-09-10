@@ -777,11 +777,7 @@ PPCODE:
         count = split_comma(sp, auth);
     else
         PUSHs(sv_2mortal(newSVpv(auth, 0)));
-
-    if (count > 1) {
-        Safefree(auth);
-    }
-
+    Safefree(auth);
     XSRETURN(count);
 
 void
