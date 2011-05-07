@@ -531,7 +531,7 @@ INCLUDE: const-xs.inc
 #define class "Net::SSH2"
 
 SSH2*
-net_ss__new(SV* proto, SV* tracing)
+net_ss__new(SV* proto)
 CODE:
     Newz(0/*id*/, RETVAL, 1, SSH2);
     if (RETVAL) {
@@ -544,9 +544,6 @@ CODE:
     }
     clear_error(RETVAL);
 
-    if (SvTRUE(tracing))
-      libssh2_trace(RETVAL->session, SvIV(tracing));
-
     debug("Net::SSH2: created new object 0x%x\n", RETVAL);
 OUTPUT:
     RETVAL
@@ -555,6 +552,13 @@ void
 net_ss_trace(SSH2* ss, SV* bitmask)
 CODE:
     libssh2_trace(ss->session, SvIV(bitmask));
+
+SV*
+net_ss_block_directions(SSH2* ss)
+CODE:
+    RETVAL = newSViv((IV)libssh2_session_block_directions(ss->session));
+OUTPUT:
+    RETVAL
 
 void
 net_ss_blocking(SSH2* ss, SV* blocking)
@@ -1137,6 +1141,32 @@ CODE:
     }
     XSRETURN_IV(success);
 
+#if (LIBSSH2_VERSION_MAJOR == 1 && ((LIBSSH2_VERSION_MINOR == 2 && LIBSSH2_VERSION_PATCH >= 8) || LIBSSH2_VERSION_MINOR > 2)) || LIBSSH2_VERSION_MAJOR > 1
+
+SV*
+net_ch_exit_signal(SSH2_CHANNEL* ch)
+CODE:
+    clear_error(ch->ss);
+    RETVAL = NULL;
+    char *exitsignal = NULL;  
+    libssh2_channel_get_exit_signal(ch->channel, &exitsignal,
+        NULL, NULL, NULL, NULL, NULL);
+    if (exitsignal) {
+        RETVAL = newSVpv(exitsignal, 0);
+        libssh2_free(ch->ss->session, exitsignal);
+    }
+OUTPUT:
+    RETVAL
+
+#else
+
+void
+net_ch_exit_signal(SSH2_CHANNEL* ch)
+CODE:
+    croak("libssh2 version 1.2.8 or higher required for exit_signal support");
+
+#endif
+
 void
 net_ch_blocking(SSH2_CHANNEL* ch, SV* blocking)
 CODE:
@@ -1311,10 +1341,15 @@ PREINIT:
 CODE:
     clear_error(ch->ss);
     pv_buffer = SvPV(buffer, len_buffer);
-    count = libssh2_channel_write_ex(ch->channel, XLATEXT,
-     pv_buffer, len_buffer);
-    if (count < 0)
-        XSRETURN_EMPTY;
+    do {
+        count = libssh2_channel_write_ex(ch->channel, XLATEXT,
+         pv_buffer, len_buffer);
+        if (count < 0 && LIBSSH2_ERROR_EAGAIN != count)
+            XSRETURN_EMPTY;
+        if (LIBSSH2_ERROR_EAGAIN == count
+                && libssh2_session_get_blocking(ch->ss->session) == 0)
+            XSRETURN_IV(LIBSSH2_ERROR_EAGAIN);
+    } while (LIBSSH2_ERROR_EAGAIN == count);
     XSRETURN_IV(count);
 
 void
@@ -1394,7 +1429,7 @@ CODE:
         if (error >= 0 && error < countof(sftp_error))
             ST(1) = sv_2mortal(newSVpvf("SSH_FX_%s", sftp_error[error]));
         else
-            ST(1) = sv_2mortal(newSVpvf("SSH_FX_UNKNOWN(%d)", error));
+            ST(1) = sv_2mortal(newSVpvf("SSH_FX_UNKNOWN(%lu)", error));
         XSRETURN(2);
     }
 
