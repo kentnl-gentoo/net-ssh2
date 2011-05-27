@@ -7,6 +7,11 @@ my $lib = '';
 my $inc = '';
 my $extra_libs = '-lz -lssl -lcrypto';
 
+for (@ARGV) {
+    /^inc=(.*)/ and $inc = $1;
+    /^lib=(.*)/ and $lib = $1;
+}
+
 # Windows, as usual, is a special case
 my $win32 = ($^O eq 'MSWin32');
 my @define = $win32 ? (DEFINE => '-DLIBSSH2_WIN32') : ();
@@ -17,7 +22,7 @@ perl_version '5.006000';
 
 my @search_paths = (
   $Config{siteprefixexp}, $Config{prefixexp},
-  '/usr/local/ssl', '/usr', '/usr/local', '/opt', '/',
+  '/usr/local/ssl', '/usr', '/usr/local', '/opt', '/opt/local', '/',
   $ENV{HOME}
 );
 my %uniq;
@@ -35,6 +40,10 @@ obtained from http://www.openssl.org.
 
 Debian:   sudo aptitude install libssh2-1-dev
 OpenSUSE: sudo zypper in libssh2-1 libssh2-devel
+
+You can pass your libssh2 lib and include dirs on the command line. E.g.:
+
+    perl Makefile.PL lib=$HOME/libssh2/lib inc=$HOME/libssh2/include
 
 EOF
 
