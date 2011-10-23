@@ -854,6 +854,74 @@ CODE:
         ss->sv_tmp = NULL;
     }
 
+#if LIBSSH2_VERSION_NUM >= 0x010203
+
+void
+net_ss_auth_agent(SSH2* ss, SV* username)
+PREINIT:
+    STRLEN len_username;
+    const char* pv_username;
+    LIBSSH2_AGENT *agent = NULL;
+    int agent_end, rc;
+    struct libssh2_agent_publickey *identity, *prev_identity = NULL;
+CODE:
+    clear_error(ss);
+    pv_username = SvPV(username, len_username);
+    agent = libssh2_agent_init(ss->session);
+    if(!agent) {
+        XSRETURN_IV(0);
+    }
+    if(libssh2_agent_connect(agent)) {
+        XSRETURN_IV(0);
+    }
+    if(libssh2_agent_list_identities(agent)) {
+        XSRETURN_IV(0);
+    }
+    while(1) {
+        agent_end = libssh2_agent_get_identity(agent, &identity, prev_identity);
+
+        if(agent_end == 1) {
+            // Reached end, not successfully authenticated.
+            XSRETURN_IV(0);
+        }
+
+        if(agent_end < 0) {
+            // error
+            XSRETURN_IV(agent_end);
+        }
+
+        rc = libssh2_agent_userauth(agent, pv_username, identity);
+
+        if (rc == LIBSSH2_ERROR_EAGAIN &&
+            libssh2_session_get_blocking(ss->session) == 0) {
+            XSRETURN_IV(rc);
+        }
+
+        while (rc == LIBSSH2_ERROR_EAGAIN) {
+          rc = libssh2_agent_userauth(agent, pv_username, identity);
+        }
+
+        if(rc >= 0) {
+            // authenticated
+            XSRETURN_IV(!rc);
+        }
+
+        prev_identity = identity;
+    }
+
+    if(agent_end) {
+        XSRETURN_IV(agent_end);
+    }
+
+#else
+
+void
+net_ss_auth_agent(SSH2* ss, SV* username)
+CODE:
+    croak("libssh2 version 1.2.3 or higher required for agent support");
+
+#endif
+
 void
 net_ss_auth_publickey(SSH2* ss, SV* username, const char* publickey, \
  const char* privatekey, SV* passphrase = NULL)

@@ -208,7 +208,7 @@ our %EXPORT_TAGS = (
 
 our @EXPORT_OK = @{$EXPORT_TAGS{all}};
 
-our $VERSION = '0.39';
+our $VERSION = '0.40';
 
 # methods
 
@@ -277,49 +277,63 @@ sub connect {
     return $self->_startup($fd, $sock);
 }
 
-my %Auth = (
-    'hostbased'     => {
-        ssh    => 'hostbased',
-        method => \&auth_hostbased,
-        params => [qw(username publickey privatekey
-                   hostname local_username? password?)],
-    },
-    'publickey'     => {
-        ssh    => 'publickey',
-        method => \&auth_publickey,
-        params => [qw(username publickey privatekey password?)],
-    },
-    'keyboard'      => {
-        ssh    => 'keyboard-interactive', 
-        method => \&auth_keyboard,
-        params => [qw(_interact username cb_keyboard?)]
-    },
-    'keyboard-auto' => {
-        ssh    => 'keyboard-interactive',
-        method => \&auth_keyboard,
-        params => [qw(username password)],
-    },
-    'password'      => {
-        ssh    => 'password',
-        method => \&auth_password,
-        params => [qw(username password cb_password?)],
-    },
-    'none'          => {
-        ssh    => 'none',
-        method => \&auth_password,
-        params => [qw(username)],
-    },
-);
+sub _auth_methods {
+    return {
+        ((version())[1]||0 >= 0x010203 ? (
+            'agent' => {
+                ssh => 'agent',
+                method => \&auth_agent,
+                params => [qw(username)],
+            },
+        ) : ()),
+        'hostbased'     => {
+            ssh    => 'hostbased',
+            method => \&auth_hostbased,
+            params => [qw(username publickey privatekey
+                       hostname local_username? password?)],
+        },
+        'publickey'     => {
+            ssh    => 'publickey',
+            method => \&auth_publickey,
+            params => [qw(username publickey privatekey password?)],
+        },
+        'keyboard'      => {
+            ssh    => 'keyboard-interactive', 
+            method => \&auth_keyboard,
+            params => [qw(_interact username cb_keyboard?)]
+        },
+        'keyboard-auto' => {
+            ssh    => 'keyboard-interactive',
+            method => \&auth_keyboard,
+            params => [qw(username password)],
+        },
+        'password'      => {
+            ssh    => 'password',
+            method => \&auth_password,
+            params => [qw(username password cb_password?)],
+        },
+        'none'          => {
+            ssh    => 'none',
+            method => \&auth_password,
+            params => [qw(username)],
+        },
+    };
+}
 
-my @Rank = qw(hostbased publickey keyboard keyboard-auto password none);
+sub _auth_rank {
+    return [
+        ((version())[1]||0 >= 0x010203 ? ('agent') : ()),
+        qw(hostbased publickey keyboard keyboard-auto password none)
+    ];
+}
 
 sub auth {
     my ($self, %p) = @_;
-    my $rank = delete $p{rank} || \@Rank;
+    my $rank = delete $p{rank} || $self->_auth_rank;
 
     TYPE: for(my $i = 0; $i < @$rank; $i++) {
         my $type = $rank->[$i];
-        my $data = $Auth{$type};
+        my $data = $self->_auth_methods->{$type};
         confess "unknown authentication method '$type'" unless $data;
 
         # do we have the required parameters?
@@ -892,6 +906,11 @@ echoed, respectively) which should return an array of responses.
 
 If only a username is provided, the default callback will handle standard
 interactive responses; L<Term::ReadKey> is required.
+
+=head2 auth_agent ( username )
+
+Try to authenticate using ssh-agent. This requires libssh2 version 1.2.3 or
+later.
 
 =head2 auth ( ... )
 
