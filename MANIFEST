@@ -1,4 +1,5 @@
 .gitignore
+BUILDING.WIN32
 Changes
 example/read.pl
 fallback/const-c.inc

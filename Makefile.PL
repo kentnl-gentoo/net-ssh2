@@ -8,10 +8,17 @@ my $lib = '';
 my $inc = '';
 my $extra_libs = '-lz -lssl -lcrypto';
 
-for (@ARGV) {
-    /^inc=(.*)/ and $inc = $1;
-    /^lib=(.*)/ and $lib = $1;
+my @args = @ARGV;
+my @pass_through_args;
+while (my $arg = shift @args) {
+    if (my ($param, $val) = $arg =~ /^(inc|lib)=(.*)\z/) {
+        my $var = $param eq 'inc' ? \$inc : \$lib;
+        $$var   = $val;
+        next;
+    }
+    push @pass_through_args, $arg;
 }
+@ARGV = @pass_through_args;
 
 # Windows, as usual, is a special case
 my $win32 = ($^O eq 'MSWin32');
@@ -63,6 +70,9 @@ You can pass your libssh2 lib and include dirs on the command line. E.g.:
 
     perl Makefile.PL lib=$HOME/libssh2/lib inc=$HOME/libssh2/include
 
+If you want to build on Windows, see the file BUILDING.WIN32 in the
+distribution.
+
 EOF
 
 if (!$lib && !$inc) {
@@ -84,8 +94,8 @@ if (!$lib && !$inc) {
 auto_provides;
 
 libs $lib;
-$inc = "$inc -I.";
-makemaker_args CCFLAGS => $inc, @define;
+inc "$inc -I.";
+makemaker_args @define;
 
 realclean_files qw/const-c.inc const-xs.inc/;
 
