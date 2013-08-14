@@ -208,7 +208,7 @@ our %EXPORT_TAGS = (
 
 our @EXPORT_OK = @{$EXPORT_TAGS{all}};
 
-our $VERSION = '0.51';
+our $VERSION = '0.52';
 
 # methods
 
@@ -423,9 +423,7 @@ sub scp_put {
 
     # send/receive SCP acknowledgement
     $chan->write("\0");
-    my $eof;
-    $chan->read($eof, 1);
-    return 1;
+    return $chan->read((my $eof), 1) || undef;
 }
 
 my %Event;
