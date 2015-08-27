@@ -48,7 +48,7 @@ is($banner, "SSH-2.0-libssh2_$version", "banner is $banner");
 
 # (2) timeout
 is($ssh2->poll(0), 0, 'poll indefinite');
-is($ssh2->poll(250), 0, 'poll 1/4 second');
+is($ssh2->poll(2000), 0, 'poll 2 second');
 
 is($ssh2->sock, undef, '->sock is undef before connect');
 
@@ -60,7 +60,8 @@ unless ($host) {
     print <<TEST;
 
 To test the connection capabilities of Net::SSH2, we need a test site running
-a secure shell server daemon.  Enter 'localhost' to use this host.
+a secure shell server daemon.  Enter 'localhost' or '127.0.0.1' to use this
+host over IPv4. Enter '::1' to use this host over IPv6.
 
 TEST
     print "Select host [ENTER to skip]: ";
@@ -71,7 +72,7 @@ SKIP: { # SKIP-server
 skip '- no server daemon available', 62 unless $host;
 ok($ssh2->connect($host), "connect to $host");
 
-isa_ok($ssh2->sock, 'IO::Socket::INET', '->sock isa IO::Socket::INET');
+isa_ok($ssh2->sock, 'IO::Socket::IP', '->sock isa IO::Socket::IP');
 
 # (8) server methods
 for my $type(qw(kex hostkey crypt_cs crypt_sc mac_cs mac_sc comp_cs comp_sc)) {
@@ -80,9 +81,9 @@ for my $type(qw(kex hostkey crypt_cs crypt_sc mac_cs mac_sc comp_cs comp_sc)) {
 }
 
 # (2) hostkey hash
-my $md5 = $ssh2->hostkey('md5');
+my $md5 = $ssh2->hostkey_hash('md5');
 is(length $md5, 16, 'have MD5 hostkey hash');
-my $sha1 = $ssh2->hostkey('sha1');
+my $sha1 = $ssh2->hostkey_hash('sha1');
 is(length $sha1, 20, 'have SHA1 hostkey hash');
 
 # (3) authentication methods
@@ -100,13 +101,14 @@ is_deeply(\@auth, [$ssh2->auth_list($user)], 'list matches comma-separated');
 ok(!$ssh2->auth_ok, 'not authenticated yet');
 
 # (2) authenticate
-@auth = $pass ? (password => $pass) : (interact => 1);
+@auth = (password => $pass) if $pass;
 if($^O =~ /MSWin32/i && !$pass) { # interact probably failed to set $pass on Win32
   @auth = win32_auth();
 }
 my $type = $ssh2->auth(username => $user, @auth,
-  publickey  => "$ENV{HOME}/.ssh/id_dsa.pub",
-  privatekey => "$ENV{HOME}/.ssh/id_dsa");
+                       publickey  => "$ENV{HOME}/.ssh/id_dsa.pub",
+                       privatekey => "$ENV{HOME}/.ssh/id_dsa",
+                       interact => 1 );
 ok($type, "authenticated via: $type");
 SKIP: { # SKIP-auth
 skip '- failed to authenticate with server', 37 unless $ssh2->auth_ok;
@@ -222,7 +224,7 @@ $chan = $ssh2->channel();
 ok($chan->exec('ls -d /'), "exec 'ls -d /'");
 $chan->blocking(0);  # don't block, or we'll wait forever
 my @poll = { handle => $chan, events => ['in'] };
-ok($ssh2->poll(250, \@poll), 'got poll response');
+ok($ssh2->poll(2000, \@poll), 'got poll response');
 ok($poll[0]->{revents}->{in}, 'got input event');
 $line = <$chan>;
 chomp $line;
@@ -264,6 +266,7 @@ sub win32_auth {
   else {
     Term::ReadKey::ReadMode('noecho');
     $pass = Term::ReadKey::ReadLine(0);
+    Term::ReadKey::ReadMode('echo');
   }
   chomp($pass);
   return (password => $pass);

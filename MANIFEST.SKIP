@@ -14,3 +14,7 @@
 ^Makefile\z
 ^const-c\.inc\z
 ^const-xs\.inc\z
+^\.travis.yml
+^\.travis/
+^\.gitignore
+^t/pod-spell.t

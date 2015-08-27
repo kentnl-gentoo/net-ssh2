@@ -119,7 +119,7 @@ static const char *const sftp_error[] = {
 
 #define countof(x) (sizeof(x)/sizeof(*x))
 
-#define XLATEXT (ext ? SSH_EXTENDED_DATA_STDERR : 0)
+#define XLATEXT (SvTRUE(ext) ? SSH_EXTENDED_DATA_STDERR : 0)
 
 #define XLATATTR(name, field, flag) \
     else if (strEQ(key, name)) { \
@@ -179,6 +179,17 @@ typedef struct SSH2_PUBLICKEY {
     SV* sv_ss;
     LIBSSH2_PUBLICKEY* pkey;
 } SSH2_PUBLICKEY;
+
+#if LIBSSH2_VERSION_NUM >= 0x010200
+
+/* Net::SSH2::KnownHosts object */
+typedef struct SSH2_KNOWNHOSTS {
+    SSH2 *ss;
+    SV *sv_ss;
+    LIBSSH2_KNOWNHOSTS* knownhosts;
+} SSH2_KNOWNHOSTS;
+
+#endif
 
 static int net_ss_debug_out = 0;
 static unsigned long net_ch_gensym = 0;
@@ -359,87 +370,126 @@ static int return_stat_attrs(SV** sp, LIBSSH2_SFTP_ATTRIBUTES* attrs,
 /* wrap a libSSH2 public key object */
 #define NEW_PUBLICKEY(create) NEW_ITEM(SSH2_PUBLICKEY, pkey, create, ss)
 
+/* wrap a libSSH2 knownhosts object */
+#define NEW_KNOWNHOSTS(create) NEW_ITEM(SSH2_KNOWNHOSTS, knownhosts, create, ss)
+
+static void
+set_cb_args(pTHX_ AV* data) {
+    GV *gv = gv_fetchpv("Net::SSH2::_cb_args", 1, SVt_PV);
+    SV *sv = save_scalar(gv);
+    sv_setsv(sv, sv_2mortal(newRV_inc((SV*)data)));
+}
+
+static SV*
+get_cb_arg(pTHX_ I32 ix) {
+    SV *sv = get_sv("Net::SSH2::_cb_args", 1);
+    if (SvROK(sv)) {
+        AV *data = (AV*)SvRV(sv);
+        if (SvTYPE(data) == SVt_PVAV) {
+            SV **svp = av_fetch(data, ix, 0);
+            if (svp && *svp)
+                return *svp;
+            Perl_croak(aTHX_ "internal error: unable to fetch callback data slot %d", ix);
+        }
+    }
+    Perl_croak(aTHX_ "internal error: unexpected structure found for callback data");
+}
+
 /* callback for returning a password via "keyboard-interactive" auth */
 static LIBSSH2_USERAUTH_KBDINT_RESPONSE_FUNC(cb_kbdint_response_password) {
-    SSH2* ss = (SSH2*)*abstract;
-    const char* pv_password;
-    STRLEN len_password;
-
     if (num_prompts != 1 || prompts[0].echo) {
         int i;
-        for (i = 0; i < num_prompts; ++i)
+        for (i = 0; i < num_prompts; ++i) {
+            responses[i].text = NULL;
             responses[i].length = 0;
-        return;
-     }
+        }
+    }
+    else {
+        /* single prompt, no echo: assume it's a password request */
+        dTHX;
+        SV *password = get_cb_arg(aTHX_ 0);
+        STRLEN len_password;
+        const char* pv_password = SvPV(password, len_password);
 
-    /* single prompt, no echo: assume it's a password request */
-    pv_password = SvPV(ss->sv_tmp, len_password);
-    New(0, responses[0].text, len_password, char);
-    Copy(pv_password, responses[0].text, len_password, char);
-    responses[0].length = len_password;
+        responses[0].text = savepvn(pv_password, len_password);
+        responses[0].length = len_password;
+    }
 }
 
 /* thunk to call perl input-reading function for "keyboard-interactive" auth */
 static LIBSSH2_USERAUTH_KBDINT_RESPONSE_FUNC(cb_kbdint_response_callback) {
-    SSH2* ss = (SSH2*)*abstract;
-    int i;
+    dTHX; dSP;
+    int count, i;
+    SV *cb = get_cb_arg(aTHX_ 0);
+    SV *self = get_cb_arg(aTHX_ 1);
+    SV *username = get_cb_arg(aTHX_ 2);
 
-    dSP; I32 ax; int count;
-    ENTER; SAVETMPS; PUSHMARK(SP);
+    ENTER;
+    SAVETMPS;
+    PUSHMARK(SP);
     EXTEND(SP, 4 + num_prompts);
-    PUSHs(*av_fetch((AV*)ss->sv_tmp, 1, 0/*lval*/));
-    PUSHs(*av_fetch((AV*)ss->sv_tmp, 2, 0/*lval*/));
+    PUSHs(self);
+    PUSHs(username);
     PUSHs(sv_2mortal(newSVpvn(name, name_len)));
     PUSHs(sv_2mortal(newSVpvn(instruction, instruction_len)));
     for (i = 0; i < num_prompts; ++i) {
         HV* hv = newHV();
-        responses[i].length = 0;
-        hv_store(hv, "text", 4, newSVpvn(prompts[i].text, prompts[i].length),
-         0/*hash*/);
-        hv_store(hv, "echo", 4, newSViv(prompts[i].echo), 0/*hash*/);
         PUSHs(sv_2mortal(newRV_noinc((SV*)hv)));
+        hv_store(hv, "text", 4, newSVpvn(prompts[i].text, prompts[i].length), 0);
+        hv_store(hv, "echo", 4, newSVuv(prompts[i].echo), 0);
+        responses[i].text = NULL;
+        responses[i].length = 0;
     }
     PUTBACK;
-
-    count = call_sv(*av_fetch((AV*)ss->sv_tmp, 0, 0/*lval*/), G_ARRAY);
-    SPAGAIN; SP -= count; ax = (SP - PL_stack_base) + 1;
-
-    /* translate the returned responses */
-    for (i = 0; i < count; ++i) {
-        STRLEN len_response;
-        const char* pv_response = SvPV(ST(i), len_response);
-        New(0, responses[i].text, len_response, char);
-        Copy(pv_response, responses[i].text, len_response, char);
-        responses[i].length = len_response;
+    count = call_sv(cb, G_ARRAY);
+    SPAGAIN;
+    if (count > num_prompts) {
+        Perl_warn(aTHX_ "Too many responses from callback, %d expected but %d found!",
+                  num_prompts, count);
+        while (count-- > num_prompts)
+            POPs;
     }
-
-    PUTBACK; FREETMPS; LEAVE;
+    while (count-- > 0) {
+        STRLEN len_response;
+        SV *sv = POPs;
+        char *pv_response = SvPV(sv, len_response);
+        responses[count].text = savepvn(pv_response, len_response);
+        responses[count].length = len_response;
+    }
+    PUTBACK;
+    FREETMPS;
+    LEAVE;
 }
 
 /* thunk to call perl password change function for "password" auth */
 static LIBSSH2_PASSWD_CHANGEREQ_FUNC(cb_password_change_callback) {
-    SSH2* ss = (SSH2*)*abstract;
+    dTHX; dSP;
+    int count;
+    SV *cb = get_cb_arg(aTHX_ 0);
+    SV *self = get_cb_arg(aTHX_ 1);
+    SV *username = get_cb_arg(aTHX_ 2);
 
-    dSP; I32 ax; int count;
-    ENTER; SAVETMPS; PUSHMARK(SP);
-    XPUSHs(*av_fetch((AV*)ss->sv_tmp, 1, 0/*lval*/));
-    XPUSHs(*av_fetch((AV*)ss->sv_tmp, 2, 0/*lval*/));
+    ENTER;
+    SAVETMPS;
+    PUSHMARK(SP);
+    XPUSHs(self);
+    XPUSHs(username);
     PUTBACK;
-
-    *newpw = NULL;
-    *newpw_len = 0;
-    count = call_sv(*av_fetch((AV*)ss->sv_tmp, 0, 0/*lval*/), G_SCALAR);
-    SPAGAIN; SP -= count; ax = (SP - PL_stack_base) + 1;
-
+    count = call_sv(cb, G_SCALAR);
+    SPAGAIN;
     if (count > 0) {
         STRLEN len_password;
-        const char* pv_password = SvPV(ST(0), len_password);
-        New(0, *newpw, len_password, char);
-        Copy(pv_password, *newpw, len_password, char);
+        const char* pv_password = SvPV(POPs, len_password);
+        *newpw = savepvn(pv_password, len_password);
         *newpw_len = len_password;
     }
-
-    PUTBACK; FREETMPS; LEAVE;
+    else {
+        *newpw = NULL;
+        *newpw_len = 0;
+    }
+    PUTBACK;
+    FREETMPS;
+    LEAVE;
 }
 
 /* thunk to call perl SSH_MSG_IGNORE packet function */
@@ -703,6 +753,20 @@ static void openssl_threads_init(void)
 
 #endif
 
+static void
+croak_last_error(SSH2 *ss, const char *klass, const char *method) {
+    char *errmsg;
+    if ((ss->errcode != LIBSSH2_ERROR_NONE) && (ss->errmsg != NULL))
+        errmsg = SvPV_nolen(ss->errmsg);
+    else {
+        if (libssh2_session_last_error(ss->session, &errmsg, NULL, 0) == LIBSSH2_ERROR_NONE)
+            croak("Internal error: croak_last_error called but there was no error!");
+    }
+    croak("%s::%s: %s", klass, method, errmsg);
+}
+
+#define CROAK_LAST_ERROR(session, method) (croak_last_error((session), class, (method)))
+
 /* perl module exports */
 
 MODULE = Net::SSH2		PACKAGE = Net::SSH2		PREFIX = net_ss_
@@ -939,6 +1003,29 @@ PPCODE:
     SvREFCNT_dec(prefs);
     XSRETURN_IV(!i);
 
+#if LIBSSH2_VERSION_NUM >= 0x010200
+
+void
+net_ss_flag(SSH2* ss, SV* flag, int value)
+PREINIT:
+    IV flag_iv;
+    int success;
+PPCODE:
+    clear_error(ss);
+    if (!iv_constant_sv("LIBSSH2_FLAG_", flag, &flag_iv))
+        croak("%s::method: unknown flag: %s", class, SvPV_nolen(flag));
+    success = libssh2_session_flag(ss->session, (int)flag_iv, value);
+    XSRETURN_IV(!success);
+
+#else
+
+void
+net_ss_flag(SSH2* ss, SV* flag, int value)
+CODE:
+    croak("libssh2 version 1.2 or higher required for flag support");
+
+#endif
+
 void
 net_ss_callback(SSH2* ss, SV* type, SV* callback = NULL)
 PREINIT:
@@ -996,7 +1083,7 @@ CODE:
      ss->session, reason, description, lang));
 
 void
-net_ss_hostkey(SSH2* ss, SV* hash_type)
+net_ss_hostkey_hash(SSH2* ss, SV* hash_type)
 PREINIT:
     IV type;
     const char* hash;
@@ -1013,6 +1100,25 @@ PPCODE:
         XSRETURN(1);
     }
     XSRETURN_EMPTY;
+
+void
+net_ss_remote_hostkey(SSH2* ss)
+PREINIT:
+    const char *key_pv;
+    size_t key_len;
+    int type_int;
+PPCODE:
+    if ((key_pv = libssh2_session_hostkey(ss->session, &key_len, &type_int))) {
+        XPUSHs(sv_2mortal(newSVpvn(key_pv, key_len)));
+        if (GIMME_V != G_ARRAY)
+            XSRETURN(1);
+        else {
+            XPUSHs(sv_2mortal(newSViv(type_int)));
+            XSRETURN(2);
+        }
+    }
+    else
+        XSRETURN_EMPTY;
 
 void
 net_ss_auth_list(SSH2* ss, SV* username = NULL)
@@ -1041,105 +1147,78 @@ CODE:
     clear_error(ss);
     XSRETURN_IV(libssh2_userauth_authenticated(ss->session));
 
-void
-net_ss_auth_password(SSH2* ss, SV* username, SV* password = NULL, \
- SV* callback = NULL)
+SV *
+net_ss_auth_password(SSH2* ss,                                  \
+                     SV* username, SV* password = &PL_sv_undef, \
+                     SV* callback = &PL_sv_undef)
 PREINIT:
     STRLEN len_username, len_password;
-    const char* pv_username, * pv_password;
-    int i;
+    const char *pv_username, *pv_password;
+    int i, ok;
 CODE:
     clear_error(ss);
-    if (callback && SvOK(callback) &&
-     !(SvROK(callback) && SvTYPE(SvRV(callback)) == SVt_PVCV))
-        croak("%s::auth_password: callback must be CODE ref", class);
     pv_username = SvPV(username, len_username);
 
     /* if we don't have a password, try for an unauthenticated login */
-    if (!password || !SvPOK(password)) {
-        char* auth = libssh2_userauth_list(ss->session,
-         pv_username, len_username);
-        /* This causes a double free segfault
-         * Safefree(auth);
-         */
-        XSRETURN_IV(!auth && libssh2_userauth_authenticated(ss->session));
+    if (!SvPOK(password)) {
+        /* That's how libssh2 tells you authentication 'none' is valid */
+        ok = ((libssh2_userauth_list(ss->session, pv_username, len_username) == NULL) &&
+              libssh2_userauth_authenticated(ss->session));
     }
+    else {
+        if (SvOK(callback)) {
+            if (!(SvROK(callback) && SvTYPE(SvRV(callback)) == SVt_PVCV))
+                Perl_croak(aTHX_ "%s::auth_password: callback must be CODE ref", class);
+            else {
+                AV *cb_args = (AV*)sv_2mortal((SV*)newAV());
+                av_push(cb_args, newSVsv(callback));
+                av_push(cb_args, newSVsv(ST(0))); /*session */
+                av_push(cb_args, newSVsv(username));
+                set_cb_args(aTHX_ cb_args);
+            }
+        }
 
-    /* if we have a callback, setup its parameters */
-    if (callback) {
-        AV* args = (AV*)sv_2mortal((SV*)newAV());
-        av_store(args, 0, newSVsv(callback));
-        av_store(args, 1, newSVsv(ST(0)));
-        av_store(args, 2, newSVsv(username));
-        ss->sv_tmp = (SV*)args;
+        pv_password = SvPV(password, len_password);
+        ok = (libssh2_userauth_password_ex(ss->session,
+                                           pv_username, len_username,
+                                           pv_password, len_password,
+                                           (SvOK(callback) ? cb_password_change_callback : NULL)) >= 0);
     }
-
-    pv_password = SvPV(password, len_password);
-    XSRETURN_IV(!libssh2_userauth_password_ex(ss->session, pv_username,
-     len_username, pv_password, len_password,
-     callback ? cb_password_change_callback : NULL));
-
-    if (callback)
-        ss->sv_tmp = NULL;
+    RETVAL = (ok ? &PL_sv_yes : &PL_sv_no);
+OUTPUT:
+    RETVAL
 
 #if LIBSSH2_VERSION_NUM >= 0x010203
 
-void
-net_ss_auth_agent(SSH2* ss, SV* username)
+SV *
+net_ss_auth_agent(SSH2* ss, const char* username)
 PREINIT:
-    STRLEN len_username;
-    const char* pv_username;
-    LIBSSH2_AGENT *agent = NULL;
-    int agent_end, rc;
-    struct libssh2_agent_publickey *identity, *prev_identity = NULL;
+    LIBSSH2_AGENT *agent;
+    int old_blocking;
 CODE:
+    RETVAL = &PL_sv_no;
     clear_error(ss);
-    pv_username = SvPV(username, len_username);
-    agent = libssh2_agent_init(ss->session);
-    if(!agent) {
-        XSRETURN_IV(0);
-    }
-    if(libssh2_agent_connect(agent)) {
-        XSRETURN_IV(0);
-    }
-    if(libssh2_agent_list_identities(agent)) {
-        XSRETURN_IV(0);
-    }
-    while(1) {
-        agent_end = libssh2_agent_get_identity(agent, &identity, prev_identity);
-
-        if(agent_end == 1) {
-            /* Reached end, not successfully authenticated. */
-            XSRETURN_IV(0);
+    /* unfortunatelly this can't be make to work on nb mode */
+    old_blocking = libssh2_session_get_blocking(ss->session);
+    libssh2_session_set_blocking(ss->session, 1);
+    if ((agent = libssh2_agent_init(ss->session)) != NULL) {
+        if (libssh2_agent_connect(agent) == LIBSSH2_ERROR_NONE) {
+            if (libssh2_agent_list_identities(agent) == LIBSSH2_ERROR_NONE) {
+                struct libssh2_agent_publickey *identity = NULL;
+                while (libssh2_agent_get_identity(agent, &identity, identity) == 0) {
+                    if (libssh2_agent_userauth(agent, username, identity) == LIBSSH2_ERROR_NONE) {
+                        RETVAL = &PL_sv_yes;
+                        break;
+                    }
+                }
+            }
+            libssh2_agent_disconnect(agent);
         }
-
-        if(agent_end < 0) {
-            /* error */
-            XSRETURN_IV(agent_end);
-        }
-
-        rc = libssh2_agent_userauth(agent, pv_username, identity);
-
-        if (rc == LIBSSH2_ERROR_EAGAIN &&
-            libssh2_session_get_blocking(ss->session) == 0) {
-            XSRETURN_IV(rc);
-        }
-
-        while (rc == LIBSSH2_ERROR_EAGAIN) {
-          rc = libssh2_agent_userauth(agent, pv_username, identity);
-        }
-
-        if(rc >= 0) {
-            /* authenticated */
-            XSRETURN_IV(!rc);
-        }
-
-        prev_identity = identity;
+        libssh2_agent_free(agent);
     }
-
-    if(agent_end) {
-        XSRETURN_IV(agent_end);
-    }
+    libssh2_session_set_blocking(ss->session, old_blocking);
+OUTPUT:
+    RETVAL
 
 #else
 
@@ -1151,7 +1230,7 @@ CODE:
 #endif
 
 void
-net_ss_auth_publickey(SSH2* ss, SV* username, const char* publickey, \
+net_ss_auth_publickey(SSH2* ss, SV* username, SV* publickey, \
  const char* privatekey, SV* passphrase = NULL)
 PREINIT:
     const char* pv_username;
@@ -1159,8 +1238,9 @@ PREINIT:
 CODE:
     clear_error(ss);
     pv_username = SvPV(username, len_username);
+
     XSRETURN_IV(!libssh2_userauth_publickey_fromfile_ex(ss->session,
-     pv_username, len_username, publickey, privatekey,
+     pv_username, len_username, default_string(publickey), privatekey,
      default_string(passphrase)));
 
 void
@@ -1186,54 +1266,75 @@ CODE:
      default_string(passphrase),
      pv_hostname, len_hostname, pv_local_username, len_local_username));
 
-void
+SV *
 net_ss_auth_keyboard(SSH2* ss, SV* username, SV* password = NULL)
 PREINIT:
     const char* pv_username;
     STRLEN len_username;
-    int success;
+    int rc;
+    AV *cb_args;
 CODE:
     clear_error(ss);
     pv_username = SvPV(username, len_username);
 
     /* we either have a password, or a reference to a callback */
-    if (password && SvPOK(password)) {
-        ss->sv_tmp = password;
-        success = !libssh2_userauth_keyboard_interactive_ex(
-         ss->session, pv_username, len_username, cb_kbdint_response_password);
-        ss->sv_tmp = NULL;
-        XSRETURN_IV(success);
+
+    if (!password || !SvOK(password)) {
+        password = sv_2mortal(newRV_inc((SV*)get_cv("Net::SSH2::_cb_kbdint_response_default", 1)));
+        if (!SvOK(password))
+            Perl_croak(aTHX_ "Internal error: unable to retrieve callback");
     }
 
-    /* alright, reference to callback it is */
-    if (!password || !SvOK(password))
-        password = sv_2mortal(newRV_noinc((SV*)get_cv(
-         "Net::SSH2::_cb_kbdint_response_default", 0/*create*/)));
-    if (!SvROK(password) || SvTYPE(SvRV(password)) != SVt_PVCV)
-        croak("%s::auth_keyboard requires password or CODE ref", class);
+    cb_args = (AV*)sv_2mortal((SV*)newAV());
+    av_push(cb_args, newSVsv(password));
+    av_push(cb_args, newSVsv(ST(0))); /*session */
+    av_push(cb_args, newSVsv(username));
+    set_cb_args(aTHX_ cb_args);
 
-    /* set up parameters for callback */
-    {
-        SV* rgsv[3];  /* callback, params... */
-        int i;
+    if (SvROK(password) && (SvTYPE(SvRV(password)) == SVt_PVCV))
+        rc = libssh2_userauth_keyboard_interactive_ex(ss->session,
+                                                      pv_username, len_username,
+                                                      cb_kbdint_response_callback);
+    else
+        rc = libssh2_userauth_keyboard_interactive_ex(ss->session,
+                                                      pv_username, len_username,
+                                                      cb_kbdint_response_password);
+    RETVAL = (rc < 0 ? &PL_sv_no : &PL_sv_yes);
+OUTPUT:
+    RETVAL
 
-			 	rgsv[0] = password;
-				rgsv[1] = ST(0);
-				rgsv[2] = username;
+#if LIBSSH2_VERSION_NUM >= 0x010205
 
-        for (i = 0; i < countof(rgsv); ++i)
-            SvREFCNT_inc(rgsv[i]);
-        ss->sv_tmp = (SV*)av_make(countof(rgsv), rgsv);
-    }
-    SvREFCNT_inc(SvRV(password));
+void
+net_ss_keepalive_config(SSH2 *ss, int want_reply, unsigned int interval)
+CODE:
+    libssh2_keepalive_config(ss->session, want_reply, interval);
 
-    success = !libssh2_userauth_keyboard_interactive_ex(
-     ss->session, pv_username, len_username, cb_kbdint_response_callback);
+void
+net_ss_keepalive_send(SSH2 *ss)
+PREINIT:
+    int success;
+    int seconds_to_next;
+PPCODE:
+    success = libssh2_keepalive_send(ss->session, &seconds_to_next);
+    if (success == LIBSSH2_ERROR_NONE)
+        XSRETURN_IV(seconds_to_next);
+    else
+        XSRETURN_EMPTY;
 
-    SvREFCNT_dec(SvRV(password));
-    SvREFCNT_dec(ss->sv_tmp);
-    ss->sv_tmp = NULL;
-    XSRETURN_IV(success);
+#else
+
+void
+net_ss_keepalive_config(SSH2 *ss, int want_reply, unsigned int interval)
+CODE:
+    croak("libssh2 version 1.2.5 or higher required for keepalive_config support");
+
+void
+net_ss_keepalive_send(SSH2 *ss)
+CODE:
+    croak("libssh2 version 1.2.5 or higher required for keepalive_send support");
+
+#endif
 
 SSH2_CHANNEL*
 net_ss_channel(SSH2* ss, SV* channel_type = NULL, \
@@ -1307,7 +1408,7 @@ PREINIT:
 CODE:
     if (bound_port && SvOK(bound_port)) {
         if (!SvROK(bound_port) && SvTYPE(SvRV(bound_port)) <= SVt_PVNV)
-            croak("%s::listen: bound port must be scalar reference");
+            croak("%s::listen: bound port must be scalar reference", class);
     } else
         bound_port = NULL;
     NEW_LISTENER(libssh2_channel_forward_listen_ex(ss->session,
@@ -1316,6 +1417,24 @@ CODE:
         sv_setiv(SvRV(bound_port), i_bound_port);
 OUTPUT:
     RETVAL
+
+#if LIBSSH2_VERSION_NUM >= 0x010200
+
+SSH2_KNOWNHOSTS*
+net_ss_known_hosts(SSH2 *ss)
+CODE:
+    NEW_KNOWNHOSTS(libssh2_knownhost_init(ss->session));
+OUTPUT:
+    RETVAL
+
+#else
+
+void
+net_ss_known_hosts(SSH2 *ss)
+CODE:
+    croak("libssh2 version 1.2 or higher required for known_hosts support");
+
+#endif
 
 void
 net_ss__poll(SSH2* ss, int timeout, AV* event)
@@ -1359,7 +1478,7 @@ CODE:
                  ((SSH2_LISTENER*)SvIVX(SvRV(*handle)))->listener;
             } else {
                 croak("%s::poll: invalid handle object in array (%d): %s",
-                 class, package, i);
+                 class, i, package);
             }
         } else if(SvIOK(*handle)) {
             pollfd[i].type = LIBSSH2_POLLFD_SOCKET;
@@ -1461,13 +1580,15 @@ PREINIT:
     char *exitsignal = NULL;  
 CODE:
     clear_error(ch->ss);
-    RETVAL = NULL;
+    RETVAL;
     libssh2_channel_get_exit_signal(ch->channel, &exitsignal,
         NULL, NULL, NULL, NULL, NULL);
     if (exitsignal) {
         RETVAL = newSVpv(exitsignal, 0);
-        Safefree(exitsignal);
+        libssh2_free(ch->ss->session, exitsignal);
     }
+    else
+        RETVAL = &PL_sv_undef;
 OUTPUT:
     RETVAL
 
@@ -1611,12 +1732,12 @@ CODE:
     XSRETURN_IV(1);
 
 void
-net_ch_read(SSH2_CHANNEL* ch, SV* buffer, size_t size, int ext = 0)
+net_ch_read(SSH2_CHANNEL* ch, SV* buffer, size_t size, SV *ext = &PL_sv_undef)
 PREINIT:
     char* pv_buffer;
     int count, total = 0;
 CODE:
-    debug("%s::read(size = %d, ext = %d)\n", class, size, ext);
+    debug("%s::read(size = %d, ext = %d)\n", class, size, SvTRUE(ext));
     clear_error(ch->ss);
     SvPOK_on(buffer);
     pv_buffer = sv_grow(buffer, size + 1/*NUL*/);  /* force PV */
@@ -1634,7 +1755,10 @@ CODE:
     }
 
     total += count;
-    if (count > 0 && (unsigned)count < size) {
+
+    if (count > 0 && (unsigned)count < size &&
+        libssh2_session_get_blocking(ch->ss->session)) {
+
         pv_buffer += count;
         size -= count;
         goto again;
@@ -1645,28 +1769,107 @@ CODE:
     debug("- read %d total\n", total);
     XSRETURN_IV(total);
 
-void
-net_ch_write(SSH2_CHANNEL* ch, SV* buffer, int ext = 0)
+SV *
+net_ch_write(SSH2_CHANNEL* ch, SV* buffer, SV *ext = &PL_sv_undef)
 PREINIT:
     const char* pv_buffer;
-    STRLEN len_buffer;
-    int count;
+    STRLEN len_buffer, offset = 0;
+    int count = 0;
 CODE:
     clear_error(ch->ss);
     pv_buffer = SvPV(buffer, len_buffer);
-    do {
-        count = libssh2_channel_write_ex(ch->channel, XLATEXT,
-         pv_buffer, len_buffer);
-        if (count < 0 && LIBSSH2_ERROR_EAGAIN != count)
-            XSRETURN_EMPTY;
-        if (LIBSSH2_ERROR_EAGAIN == count
-                && libssh2_session_get_blocking(ch->ss->session) == 0)
-            XSRETURN_IV(LIBSSH2_ERROR_EAGAIN);
-    } while (LIBSSH2_ERROR_EAGAIN == count);
-    XSRETURN_IV(count);
+    while (offset < len_buffer) {
+        int count = libssh2_channel_write_ex(ch->channel, XLATEXT,
+                                             pv_buffer + offset,
+                                             len_buffer - offset);
+        if (count >= 0)
+            offset += count;
+        else if (!((count == LIBSSH2_ERROR_EAGAIN) &&
+                   libssh2_session_get_blocking(ch->ss->session)))
+            break;
+    }
+    if (offset || (count == 0)) /* yes, zero is a valid value */
+        RETVAL = newSVuv(offset);
+    else if (count ==  LIBSSH2_ERROR_EAGAIN)
+        RETVAL = newSViv(LIBSSH2_ERROR_EAGAIN);
+    else
+        RETVAL = &PL_sv_undef;
+OUTPUT:
+    RETVAL
+
+#if LIBSSH2_VERSION_NUM >= 0x010100
 
 void
-net_ch_flush(SSH2_CHANNEL* ch, int ext = 0)
+net_ch_receive_window_adjust(SSH2_CHANNEL *ch, unsigned long adjustment, SV *force = &PL_sv_undef)
+PREINIT:
+    unsigned int new_size;
+PPCODE:
+    if (libssh2_channel_receive_window_adjust2(ch->channel, adjustment,
+                                               SvTRUE(force), &new_size) == LIBSSH2_ERROR_NONE) {
+        XPUSHs(sv_2mortal(newSVuv(new_size)));
+        XSRETURN(1);
+    }
+    else
+        XSRETURN_EMPTY;
+
+#else
+
+void
+net_ch_receive_window_adjust(SSH2_CHANNEL* ch, ...)
+CODE:
+    croak("libssh2 version 1.1 or higher required for receive_window_adjust support");
+
+#endif
+
+#if LIBSSH2_VERSION_NUM >= 0x010200
+
+void
+net_ch_window_write(SSH2_CHANNEL* ch)
+PREINIT:
+    unsigned long window_size_initial = 0;
+PPCODE:
+    XPUSHs(sv_2mortal(newSVuv(libssh2_channel_window_write_ex(ch->channel,
+                                                              &window_size_initial))));
+    if (GIMME_V == G_ARRAY) {
+        XPUSHs(sv_2mortal(newSVuv(window_size_initial)));
+        XSRETURN(2);
+    }
+    else
+        XSRETURN(1);
+
+void
+net_ch_window_read(SSH2_CHANNEL *ch)
+PREINIT:
+    unsigned long read_avail = 0;
+    unsigned long window_size_initial = 0;
+PPCODE:
+    XPUSHs(sv_2mortal(newSVuv(libssh2_channel_window_read_ex(ch->channel,
+                                                             &read_avail,
+                                                             &window_size_initial))));
+    if (GIMME_V == G_ARRAY) {
+        XPUSHs(sv_2mortal(newSVuv(read_avail)));
+        XPUSHs(sv_2mortal(newSVuv(window_size_initial)));
+        XSRETURN(3);
+    }
+    else
+        XSRETURN(1);
+
+#else
+
+void
+net_ch_window_write(SSH2_CHANNEL* ch)
+CODE:
+    croak("libssh2 version 1.2 or higher required for window_write support");
+
+void
+net_ch_window_read(SSH2_CHANNEL* ch)
+CODE:
+    croak("libssh2 version 1.2 or higher required for window_read support");
+
+#endif
+
+void
+net_ch_flush(SSH2_CHANNEL* ch, SV *ext = &PL_sv_undef)
 PREINIT:
     int count;
 CODE:
@@ -1739,7 +1942,7 @@ CODE:
     case G_ARRAY:
         EXTEND(SP, 2);
         ST(0) = sv_2mortal(newSVuv(error));
-        if (error >= 0 && error < countof(sftp_error))
+        if (error < countof(sftp_error))
             ST(1) = sv_2mortal(newSVpvf("SSH_FX_%s", sftp_error[error]));
         else
             ST(1) = sv_2mortal(newSVpvf("SSH_FX_UNKNOWN(%lu)", error));
@@ -1993,7 +2196,7 @@ net_fi_write(SSH2_FILE* fi, SV* buffer)
 PREINIT:
     const char* pv_buffer;
     STRLEN len_buffer;
-    size_t count;
+    ssize_t count;
 CODE:
     clear_error(fi->sf->ss);
     pv_buffer = SvPV(buffer, len_buffer);
@@ -2134,11 +2337,11 @@ CODE:
         STRLEN len_tmp;
 
         if (!SvROK(ST(i + 4)) || SvTYPE(SvRV(ST(i + 4))) != SVt_PVHV)
-            croak("%s::add: attribute %d is not hash", class, i);
+            croak("%s::add: attribute %lu is not hash", class, i);
         hv = (HV*)SvRV(ST(i + 4));
 
         if (!(tmp = hv_fetch(hv, "name", 4, 0/*lval*/)) || !*tmp)
-            croak("%s::add: attribute %d missing name", class, i);
+            croak("%s::add: attribute %lu missing name", class, i);
         attrs[i].name = SvPV(*tmp, len_tmp);
         attrs[i].name_len = len_tmp;
 
@@ -2217,6 +2420,180 @@ PPCODE:
     if (GIMME_V == G_ARRAY)
         XSRETURN(keys);
     XSRETURN_UV(keys);
+
+#undef class
+
+MODULE = Net::SSH2		PACKAGE = Net::SSH2::KnownHosts   PREFIX = net_kh_
+PROTOTYPES: DISABLE
+
+#define class "Net::SSH2::KnownHosts"
+
+#if LIBSSH2_VERSION_NUM >= 0x010200
+
+void
+net_kh_DESTROY(SSH2_KNOWNHOSTS *kh)
+CODE:
+    debug("%s::DESTROY\n", class);
+    clear_error(kh->ss);
+    libssh2_knownhost_free(kh->knownhosts);
+    SvREFCNT_dec(kh->sv_ss);
+    Safefree(kh);
+
+void
+net_kh_readfile(SSH2_KNOWNHOSTS *kh, const char *filename)
+PREINIT:
+    int n;
+CODE:
+    clear_error(kh->ss);
+    n = libssh2_knownhost_readfile(kh->knownhosts, filename, LIBSSH2_KNOWNHOST_FILE_OPENSSH);
+    if (n >= 0)
+        XSRETURN_IV(n);
+    else
+        CROAK_LAST_ERROR(kh->ss, "readfile");
+
+void
+net_kh_writefile(SSH2_KNOWNHOSTS *kh, const char *filename)
+PREINIT:
+    int rc;
+PPCODE:
+    clear_error(kh->ss);
+    rc = libssh2_knownhost_writefile(kh->knownhosts, filename, LIBSSH2_KNOWNHOST_FILE_OPENSSH);
+    if (rc == LIBSSH2_ERROR_NONE) {
+        XPUSHs(&PL_sv_yes);
+        XSRETURN(1);
+    }
+    else
+        CROAK_LAST_ERROR(kh->ss, "writefile");
+
+void
+net_kh_add(SSH2_KNOWNHOSTS *kh, const char *host, const char *salt, SV *key, SV *comment, int typemask)
+PREINIT:
+    int rc;
+    STRLEN key_len, comment_len;
+    const char *key_pv, *comment_pv;
+CODE:
+    clear_error(kh->ss);
+    key_pv = SvPV_const(key, key_len);
+    if (SvOK(comment))
+        comment_pv = SvPV_const(comment, comment_len);
+    else {
+        comment_pv = NULL;
+        comment_len = 0;
+    }
+#if LIBSSH2_VERSION_NUM >= 0x010205
+    rc = libssh2_knownhost_addc(kh->knownhosts, host, salt, key_pv, key_len,
+                                     comment_pv, comment_len, typemask, NULL);
+#else
+    if (SvOK(comment))
+        croak("libssh2 version 1.2.5 is required to add keys with comments");
+    rc = libssh2_knownhost_add(kh->knownhosts, host, salt, key_pv, key_len, typemask, NULL);
+#endif
+    if (rc == LIBSSH2_ERROR_NONE) {
+        XPUSHs(&PL_sv_yes);
+        XSRETURN(1);
+    }
+    else
+        CROAK_LAST_ERROR(kh->ss, "add");
+
+int
+net_kh_check(SSH2_KNOWNHOSTS *kh, const char *host, SV *port, SV *key, int typemask)
+PREINIT:
+    STRLEN key_len;
+    const char *key_pv;
+    UV port_uv;
+CODE:
+    clear_error(kh->ss);
+    key_pv = SvPV_const(key, key_len);
+    port_uv = (SvOK(port) ? SvUV(port) : 0);
+#if LIBSSH2_VERSION_NUM >= 0x010206
+    RETVAL = libssh2_knownhost_checkp(kh->knownhosts, host, port_uv,
+                                      key_pv, key_len, typemask, NULL);
+#else
+    if ((port != 0) && (port != 22))
+        croak("libssh2 version 1.2.6 is required when using a custom TCP port");
+    RETVAL = libssh2_knownhost_check(kh->knownhosts, host,
+                                     key_pv, key_len, typemask, NULL);
+#endif
+OUTPUT:
+    RETVAL
+
+void
+net_kh_readline(SSH2_KNOWNHOSTS *kh, SV *line)
+PREINIT:
+    int rc;
+    STRLEN line_len;
+    const char *line_pv;
+PPCODE:
+    line_pv = SvPV_const(line, line_len);
+    rc = libssh2_knownhost_readline(kh->knownhosts, line_pv, line_len, LIBSSH2_KNOWNHOST_FILE_OPENSSH);
+    if (rc == LIBSSH2_ERROR_NONE) {
+        XPUSHs(&PL_sv_yes);
+        XSRETURN(1);
+    }
+    else
+        CROAK_LAST_ERROR(kh->ss, "readline");
+
+void
+net_kh_writeline(SSH2_KNOWNHOSTS *kh, const char *host, SV *port, SV *key, int typemask)
+PREINIT:
+    int rc;
+    STRLEN key_len;
+    const char *key_pv;
+    UV port_uv;
+    size_t line_len;
+    STRLEN buffer_len;
+    SV *buffer;
+    struct libssh2_knownhost *entry = NULL;
+PPCODE:
+    clear_error(kh->ss);
+    key_pv = SvPV_const(key, key_len);
+    port_uv = (SvOK(port) ? SvUV(port) : 0);
+#if LIBSSH2_VERSION_NUM >= 0x010206
+    rc = libssh2_knownhost_checkp(kh->knownhosts, host, port_uv,
+                                      key_pv, key_len, typemask, &entry);
+#else
+    if ((port != 0) && (port != 22))
+        croak("libssh2 version 1.2.6 is required when using a custom TCP port");
+    rc = libssh2_knownhost_check(kh->knownhosts, host,
+                                 key_pv, key_len, typemask, &entry);
+#endif
+    if ((rc != LIBSSH2_KNOWNHOST_CHECK_MATCH) || !entry) {
+#if LIBSSH2_VERSION_NUM >= 0x010403
+        set_error(kh->ss, LIBSSH2_ERROR_KNOWN_HOSTS, "matching host key not found");        
+#else
+        set_error(kh->ss, LIBSSH2_ERROR_SOCKET_NONE, "matching host key not found");
+#endif
+    }
+    else {
+        buffer = sv_2mortal(newSV(512));
+        SvPOK_on(buffer);
+        while (1) {
+            rc = libssh2_knownhost_writeline(kh->knownhosts, entry,
+                                             SvPVX(buffer), SvLEN(buffer),
+                                             &line_len, LIBSSH2_KNOWNHOST_FILE_OPENSSH);
+            if (rc == LIBSSH2_ERROR_NONE) {
+                SvPVX(buffer)[line_len] = '\0';
+                SvCUR_set(buffer, line_len);
+                XPUSHs(buffer);
+                XSRETURN(1);
+            }
+
+            if ((rc != LIBSSH2_ERROR_BUFFER_TOO_SMALL) ||
+                (SvLEN(buffer) > 64 * 1024)) break;
+                
+            SvGROW(buffer, SvLEN(buffer) * 2);
+        }
+    }
+    CROAK_LAST_ERROR(kh->ss, "writeline");
+
+
+
+# /* TODO */
+# libssh2_knownhost_del()
+# libssh2_knownhost_get()
+# libssh2_knownhost_writeline()
+
+#endif
 
 #undef class
 

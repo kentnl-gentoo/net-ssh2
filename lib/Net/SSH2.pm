@@ -1,5 +1,7 @@
 package Net::SSH2;
 
+our $VERSION = '0.54_01';
+
 use 5.006;
 use strict;
 use warnings;
@@ -208,7 +210,18 @@ our %EXPORT_TAGS = (
 
 our @EXPORT_OK = @{$EXPORT_TAGS{all}};
 
-our $VERSION = '0.53';
+# load IO::Socket::IP when available, otherwise fallback to IO::Socket::INET.
+
+my $socket_class = do {
+    local ($SIG{__DIE__}, $SIG{__WARN__}, $@, $!);
+    eval {
+        require IO::Socket::IP;
+        'IO::Socket::IP';
+    }
+} || do {
+    require IO::Socket::INET;
+    'IO::Socket::INET'
+};
 
 # methods
 
@@ -218,7 +231,7 @@ sub new {
 
     my $self = $class->_new;
 
-    $self->trace($opts{trace}) if exists $opts{trace};
+    $self->trace($opts{trace}) if defined $opts{trace};
 
     return $self;
 }
@@ -246,8 +259,7 @@ sub connect {
     $opts{Timeout} ||= 30;
 
     if (@_ == 2) {
-        require IO::Socket::INET;
-        $sock = IO::Socket::INET->new(
+        $sock = $socket_class->new(
             PeerHost => $_[0],
             PeerPort => $_[1],
             Timeout => $opts{Timeout},
@@ -273,34 +285,37 @@ sub connect {
         $fd = Win32API::File::FdGetOsFHandle($fd);
     }
 
+    # enable compression when requested and if the underlying libssh2
+    # supports it
+    $self->flag(COMPRESS => 1)
+        if $opts{Compress} and ($self->version)[1] >= 0x010200;
+
     # pass it in, do protocol
     return $self->_startup($fd, $sock);
 }
 
 sub _auth_methods {
     return {
-        ((version())[1]||0 >= 0x010203 ? (
-            'agent' => {
-                ssh => 'agent',
-                method => \&auth_agent,
-                params => [qw(username)],
-            },
-        ) : ()),
+        'agent' => {
+            ssh => 'agent',
+            method => \&auth_agent,
+            params => [qw(_fallback username)],
+        },
         'hostbased'     => {
             ssh    => 'hostbased',
             method => \&auth_hostbased,
             params => [qw(username publickey privatekey
-                       hostname local_username? password?)],
+                       hostname local_username? passphrase?)],
         },
         'publickey'     => {
             ssh    => 'publickey',
             method => \&auth_publickey,
-            params => [qw(username publickey privatekey password?)],
+            params => [qw(username publickey? privatekey passphrase?)],
         },
         'keyboard'      => {
-            ssh    => 'keyboard-interactive', 
+            ssh    => 'keyboard-interactive',
             method => \&auth_keyboard,
-            params => [qw(_interact username cb_keyboard?)]
+            params => [qw(_interact _fallback username cb_keyboard?)]
         },
         'keyboard-auto' => {
             ssh    => 'keyboard-interactive',
@@ -312,6 +327,11 @@ sub _auth_methods {
             method => \&auth_password,
             params => [qw(username password cb_password?)],
         },
+        'password-interact'  => {
+             ssh    => 'password',
+             method => \&auth_password_interact,
+             params => [qw(_interact _fallback username cb_password?)],
+        },
         'none'          => {
             ssh    => 'none',
             method => \&auth_password,
@@ -320,19 +340,28 @@ sub _auth_methods {
     };
 }
 
+my @rank_default = qw(hostbased publickey keyboard-auto password agent keyboard password-interact none);
+
 sub _auth_rank {
-    return [
-        ((version())[1]||0 >= 0x010203 ? ('agent') : ()),
-        qw(hostbased publickey keyboard keyboard-auto password none)
-    ];
+    my ($self, $rank) = @_;
+    $rank ||= \@rank_default;
+    my $libver = ($self->version)[1] || 0;
+    return @$rank if $libver > 0x010203;
+    return grep { $_ ne 'agent' } @$rank;
 }
 
+my $password_when_you_mean_passphrase_warned;
 sub auth {
     my ($self, %p) = @_;
-    my $rank = delete $p{rank} || $self->_auth_rank;
 
-    TYPE: for(my $i = 0; $i < @$rank; $i++) {
-        my $type = $rank->[$i];
+    my @rank = $self->_auth_rank(delete $p{rank});
+
+    # if fallback is set, interact with the user even when a password
+    # is given
+    $p{fallback} = 1 unless defined $p{password} or defined $p{passphrase};
+
+    TYPE: for(my $i = 0; $i < @rank; $i++) {
+        my $type = $rank[$i];
         my $data = $self->_auth_methods->{$type};
         confess "unknown authentication method '$type'" unless $data;
 
@@ -342,15 +371,57 @@ sub auth {
             my $p = $param;
             my $opt = $p =~ s/\?$//;
             my $pseudo = $p =~ s/^_//;
-            next TYPE if not $opt and not exists $p{$p};
-            next if $pseudo;     # don't push pseudos
-            push @pass, $p{$p};  # if it's optional, store undef
+
+            if ($p eq 'passphrase' and not exists $p{$p} and defined $p{password}) {
+                $p = 'password';
+                $password_when_you_mean_passphrase_warned++
+                    or carp "Using the key 'password' to refer to a passphrase is deprecated. Use 'passphrase' instead";
+            }
+
+            if ($pseudo) {
+                next TYPE unless $p{$p};
+            }
+            else {
+                next TYPE unless $opt or defined $p{$p};
+                push @pass, $p{$p};  # if it's optional, store undef
+            }
         }
 
         # invoke the authentication method
         return $type if $data->{method}->($self, @pass) and $self->auth_ok;
     }
     return;  # failure
+}
+
+my $term_readkey_unavailable_warned;
+my $term_readkey_loaded;
+sub _load_term_readkey {
+    return 1 if $term_readkey_loaded ||= do {
+        local ($@, $!, $SIG{__DIE__}, $SIG{__WARN__});
+        eval { require Term::ReadKey; 1 }
+    };
+
+    carp "Unable to load Term::ReadKey, will not ask for passwords at the console!"
+        unless $term_readkey_unavailable_warned++;
+    return;
+}
+
+sub auth_password_interact {
+    my ($self, $username, $cb) = @_;
+    _load_term_readkey or return;
+    local $| = 1;
+    my $rc;
+    for (0..2) {
+        print "[user $username] password?\n";
+        Term::ReadKey::ReadMode('noecho');
+        my $password = Term::ReadKey::ReadLine(0);
+        Term::ReadKey::ReadMode('normal');
+        chomp $password;
+        $rc = $self->auth_password($username, $password, $cb);
+        last if $rc or $self->error != LIBSSH2_ERROR_AUTHENTICATION_FAILED();
+        print "Password authentication failed!\n";
+    }
+    return $rc;
 }
 
 sub scp_get {
@@ -364,9 +435,15 @@ sub scp_get {
     # read and commit blocks until we're finished
     $chan->blocking(1);
     my $mode = $stat{mode} & 0777;
-    my $file = ref $path ? $path
-       : IO::File->new($path, O_WRONLY | O_CREAT | O_TRUNC, $mode);
-    return unless $file;
+    my $file;
+    if (ref $path) {
+        $file = $path;
+    }
+    else {
+        $file = IO::File->new($path, O_WRONLY | O_CREAT | O_TRUNC, $mode);
+        return unless $file;
+        binmode $file;
+    }
 
     for (my ($size, $count) = ($stat{size}); $size > 0; $size -= $count) {
       my $buf = '';
@@ -391,7 +468,15 @@ sub scp_put {
     my ($self, $path, $remote) = @_;
     $remote = basename $path if not defined $remote;
 
-    my $file = ref $path ? $path : IO::File->new($path, O_RDONLY);
+    my $file;
+    if (ref $path) {
+        $file = $path;
+    }
+    else {
+        $file = IO::File->new($path, O_RDONLY);
+        return unless $file;
+        binmode $file;
+    }
     $self->error($!, $!), return unless $file;
     my @stat = $file->stat;
     $self->error($!, $!), return unless @stat;
@@ -484,7 +569,7 @@ sub poll {
 
 sub _cb_kbdint_response_default {
     my ($self, $user, $name, $instr, @prompt) = @_;
-    require Term::ReadKey;
+    _load_term_readkey or return;
 
     local $| = 1;
     my $prompt = "[user $user] ";
@@ -505,6 +590,11 @@ sub _cb_kbdint_response_default {
     @out
 }
 
+my $hostkey_warned;
+sub hostkey {
+    $hostkey_warned++ or carp "Net::SSH2 'hostkey' method is obsolete, use 'hostkey_hash' instead";
+    shift->hostkey_hash(@_);
+}
 
 # mechanics
 
@@ -534,6 +624,7 @@ require Net::SSH2::Channel;
 require Net::SSH2::SFTP;
 require Net::SSH2::File;
 require Net::SSH2::Listener;
+require Net::SSH2::KnownHosts;
 
 1;
 __END__
@@ -652,8 +743,9 @@ returns (code, error name, error string).
 
 =head2 sock
 
-Returns a reference to the underlying L<IO::Socket::INET> object, or C<undef> if
-not yet connected.
+Returns a reference to the underlying L<IO::Socket> object (usually a
+derived class as L<IO::Socket::IP> or L<IO::Socket::INET>), or
+C<undef> if not yet connected.
 
 =head2 trace
 
@@ -833,7 +925,7 @@ compression methods.
 
 =back
 
-=head2 connect ( handle | host [, port [, Timeout => secs ]] )
+=head2 connect ( handle | host [, port [, Timeout => secs ] [, Compress => 1]] )
 
 Accepts a handle over which to conduct the SSH 2 protocol.  The handle may be:
 
@@ -847,6 +939,11 @@ Accepts a handle over which to conduct the SSH 2 protocol.  The handle may be:
 
 =item a host name and port
 
+In order to handle IPv6 addresses the optional module
+L<IO::Socket::IP> needs to be installed (otherwise the module will use
+the IPv4 only core module L<IO::Socket::INET> to establish the
+connection).
+
 =back
 
 =head2 disconnect ( [description [, reason [, language]]] )
@@ -855,7 +952,7 @@ Send a clean disconnect message to the remote server.  Default values are empty
 strings for description and language, and C<SSH_DISCONNECT_BY_APPLICATION> for
 the reason.
 
-=head2 hostkey ( hash type )
+=head2 hostkey_hash ( hash type )
 
 Returns a hash of the host key; note that the key is raw data and may contain
 nulls or control characters.  The type may be:
@@ -867,6 +964,15 @@ nulls or control characters.  The type may be:
 =item SHA1 (20 bytes)
 
 =back
+
+Note: in previous versions of the module this method was called
+C<hostkey>.
+
+=head2 remote_hostkey
+
+Returns the public key of the remote host and its type which is one of
+C<LIBSSH2_HOSTKEY_TYPE_RSA>, C<LIBSSH2_HOSTKEY_TYPE_DSS>, or
+C<LIBSSH2_HOSTKEY_TYPE_UNKNOWN>.
 
 =head2 auth_list ( [username] )
 
@@ -881,23 +987,31 @@ Returns true iff the session is authenticated.
 
 =head2 auth_password ( username [, password [, callback ]] )
 
-Authenticate using a password (PasswordAuthentication must be enabled in
-sshd_config or equivalent for this to work.)
+Authenticate using a password (C<PasswordAuthentication> must be
+enabled in C<sshd_config> or equivalent for this to work.)
 
 If the password has expired, if a callback code reference was given, it's
 called as C<callback($self, $username)> and should return a password.  If
 no callback is provided, LIBSSH2_ERROR_PASSWORD_EXPIRED is returned.
 
-=head2 auth_publickey ( username, public key, private key [, password ] )
+=head2 auth_password_interact ( username [, callback])
+
+Prompts the user for the password interactively using Term::ReadKey.
+
+=head2 auth_publickey ( username, public key, private key [, passphrase ] )
 
 Note that public key and private key are names of files containing the keys!
 
-Authenticate using keys and an optional password.
+Authenticate using keys and an optional passphrase.
+
+When libssh2 is compiled using OpenSSL as the crypto backend, passing
+this method C<undef> as the public key argument is acceptable (OpenSSH
+is able to extract the public key from the private one).
 
 =head2 auth_hostbased ( username, public key, private key, hostname,
- [, local username [, password ]] )
+ [, local username [, passphrase ]] )
 
-Host-based authentication using an optional password.  The local username
+Host-based authentication using an optional passphrase.  The local username
 defaults to be the same as the remote username.
 
 =head2 auth_keyboard ( username, password | callback )
@@ -931,9 +1045,11 @@ will be supplied if possible.  The parameters are:
 
 =item rank
 
-An optional ranked list of methods to try.  The names should be the names of
-the L<Net::SSH2> C<auth> methods, e.g. 'keyboard' or 'publickey', with the
-addition of 'keyboard-auto' for automated 'keyboard-interactive'.
+An optional ranked list of methods to try.  The names should be the
+names of the L<Net::SSH2> C<auth> methods, e.g. 'keyboard' or
+'publickey', with the addition of 'keyboard-auto' for automated
+'keyboard-interactive' and 'password-interact' that prompts the user
+for the password interactively.
 
 =item username
 
@@ -942,6 +1058,8 @@ addition of 'keyboard-auto' for automated 'keyboard-interactive'.
 =item publickey
 
 =item privatekey
+
+=item passphrase
 
 As in the methods, publickey and privatekey are filenames.
 
@@ -953,6 +1071,12 @@ As in the methods, publickey and privatekey are filenames.
 
 If this is set to a true value, interactive methods will be considered.
 
+=item fallback
+
+If a password is given but authentication using it fails, the module
+will fall back to ask the user for another password if this
+parameter is set to a true value.
+
 =item cb_keyboard
 
 L<auth_keyboard> callback.
@@ -963,6 +1087,48 @@ L<auth_password> callback.
 
 =back
 
+=head2 flag (key, value)
+
+Sets the given session flag.
+
+The currently supported flag values are:
+
+=over 4
+
+=item COMPRESS
+
+If set before the connection negotiation is performed, compression
+will be negotiated for this connection.
+
+Compression can also be enabled passing the C<Compress> option
+L</connect>.
+
+=item SIGPIPE
+
+if set, Net::SSH2/libssh2 will not attempt to block SIGPIPEs but will
+let them trigger from the underlying socket layer.
+
+=back
+
+=head2 keepalive_config(want_reply, interval)
+
+Set how often keepalive messages should be sent.
+
+C<want_reply> indicates whether the keepalive messages should request
+a response from the server. C<interval> is number of seconds that can
+pass without any I/O.
+
+=head2 keepalive_send
+
+Send a keepalive message if needed.
+
+On failure returns undef. On success returns how many seconds you can
+sleep after this call before you need to call it again.
+
+Note that the underlying libssh2 function C<libssh2_keepalive_send>
+can not recover from EAGAIN errors. If this method fails with such
+error, the SSH connection may become corrupted.
+
 =head2 channel ( [type, [window size, [packet size]]] )
 
 Creates and returns a new channel object.  The default type is "session".
@@ -970,8 +1136,15 @@ See L<Net::SSH2::Channel>.
 
 =head2 tcpip ( host, port [, shost, sport ] )
 
-Creates a TCP connection from the remote host to the given host:port, returning
-a new channel.  Binds to shost:sport (default 127.0.0.1:22).
+Creates a TCP connection from the remote host to the given host:port,
+returning a new channel.
+
+The C<shost> and C<sport> arguments are merely informative and passed
+to the remote SSH server as the origin of the connection. They default
+to 127.0.0.1:22.
+
+Note that this method does B<not> open a new port on the local machine
+and forwards incoming connections to the remote side.
 
 =head2 listen ( port [, host [, bound port [, queue size ]]] )
 
@@ -999,6 +1172,10 @@ Return SecureFTP interface object (see L<Net::SSH2::SFTP>).
 =head2 public_key
 
 Return public key interface object (see L<Net::SSH2::PublicKey>).
+
+=head2 known_hosts
+
+Returns known hosts interface object (see L<Net::SSH2::KnownHosts>).
 
 =head2 poll ( timeout, arrayref of hashes )
 
@@ -1053,15 +1230,21 @@ LibSSH2 documentation at L<http://www.libssh2.org>.
 IETF Secure Shell (secsh) working group at
 L<http://www.ietf.org/html.charters/secsh-charter.html>.
 
-L<Net::SSH::Perl>.
+L<Net::SSH::Any> and L<Net::SFTP::Foreign> integrate nicely with Net::SSH2.
 
-=head1 AUTHOR
-
-David B. Robins, E<lt>dbrobins@cpan.orgE<gt>
+Other Perl modules related to SSH you may find interesting:
+L<Net::OpenSSH>, L<Net::SSH::Perl>, L<Net::OpenSSH::Parallel>,
+L<Net::OpenSSH::Compat>.
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2005 - 2010 by David B. Robins; all rights reserved.
+Copyright (C) 2005 - 2010 by David B. Robins (dbrobins@cpan.org)
+
+Copyright (C) 2010 - 2014 by Rafael Kitover (rkitover@cpan.org)
+
+Copyright (C) 2011 - 2015 by Salvador Fandi&ntilde;o (salva@cpan.org)
+
+All rights reserved.
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.8.0 or,

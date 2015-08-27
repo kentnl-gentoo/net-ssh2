@@ -129,6 +129,11 @@ if (!$lib && !$inc) {
     $inc = "-I$inc" if $inc;
 }
 
+my $extra_ccflags = ' ';
+if ($^O eq 'darwin') {
+	$extra_ccflags .= '-Wno-deprecated-declarations'
+}
+
 auto_provides;
 
 libs $lib;
@@ -137,10 +142,12 @@ inc "$inc -I.";
 
 makemaker_args 
     @define,
-    # this is known to NOT work on mingw and solaris, and we only turn it on for devs
-    ($Module::Install::AUTHOR && $^O ne 'MSWin32' && $^O ne 'solaris' && $Config{cc} =~ /gcc/i ? (
-        CCFLAGS => '-DPERL_GCC_PEDANTIC -std=c89 -pedantic-errors -Wno-long-long'
-    ) : ())
+    # this is known to NOT work on mingw, solaris and darwin, and we only turn it on for devs
+    ($Module::Install::AUTHOR && $^O ne 'MSWin32' && $^O ne 'solaris' && $^O ne 'darwin' && $Config{cc} =~ /gcc/i ? (
+        CCFLAGS => '-DPERL_GCC_PEDANTIC -std=c99 -pedantic-errors -Wno-long-long '
+    ) : (
+        CCFLAGS => $Config{ccflags} . $extra_ccflags
+    ))
 ;
 
 realclean_files qw/const-c.inc const-xs.inc/;
@@ -179,6 +186,7 @@ if  (eval {require ExtUtils::Constant; 1}) {
      LIBSSH2_ERROR_KEX_FAILURE LIBSSH2_ERROR_KEY_EXCHANGE_FAILURE
      LIBSSH2_ERROR_METHOD_NONE LIBSSH2_ERROR_METHOD_NOT_SUPPORTED
      LIBSSH2_ERROR_PASSWORD_EXPIRED LIBSSH2_ERROR_PROTO
+     LIBSSH2_ERROR_AUTHENTICATION_FAILED
      LIBSSH2_ERROR_PUBLICKEY_UNRECOGNIZED
      LIBSSH2_ERROR_PUBLICKEY_UNVERIFIED
      LIBSSH2_ERROR_REQUEST_DENIED LIBSSH2_ERROR_SCP_PROTOCOL
@@ -186,7 +194,10 @@ if  (eval {require ExtUtils::Constant; 1}) {
      LIBSSH2_ERROR_SFTP_PROTOCOL LIBSSH2_ERROR_SOCKET_DISCONNECT
      LIBSSH2_ERROR_SOCKET_NONE LIBSSH2_ERROR_SOCKET_SEND
      LIBSSH2_ERROR_SOCKET_TIMEOUT LIBSSH2_ERROR_TIMEOUT
-     LIBSSH2_ERROR_ZLIB LIBSSH2_FLAG_SIGPIPE LIBSSH2_FXF_APPEND
+     LIBSSH2_ERROR_ZLIB
+     LIBSSH2_FLAG_SIGPIPE
+     LIBSSH2_FLAG_COMPRESS
+     LIBSSH2_FXF_APPEND
      LIBSSH2_ERROR_EAGAIN
      LIBSSH2_SOCKET_BLOCK_INBOUND
      LIBSSH2_SOCKET_BLOCK_OUTBOUND
@@ -243,6 +254,22 @@ if  (eval {require ExtUtils::Constant; 1}) {
      LIBSSH2_TERM_HEIGHT
      LIBSSH2_TERM_HEIGHT_PX LIBSSH2_TERM_WIDTH
      LIBSSH2_TERM_WIDTH_PX
+     LIBSSH2_KNOWNHOST_TYPE_MASK
+     LIBSSH2_KNOWNHOST_TYPE_PLAIN
+     LIBSSH2_KNOWNHOST_TYPE_SHA1
+     LIBSSH2_KNOWNHOST_TYPE_CUSTOM
+     LIBSSH2_KNOWNHOST_KEYENC_MASK
+     LIBSSH2_KNOWNHOST_KEYENC_RAW
+     LIBSSH2_KNOWNHOST_KEYENC_BASE64
+     LIBSSH2_KNOWNHOST_KEY_MASK
+     LIBSSH2_KNOWNHOST_KEY_SHIFT
+     LIBSSH2_KNOWNHOST_KEY_RSA1
+     LIBSSH2_KNOWNHOST_KEY_SSHRSA
+     LIBSSH2_KNOWNHOST_KEY_SSHDSS
+     LIBSSH2_KNOWNHOST_CHECK_MATCH
+     LIBSSH2_KNOWNHOST_CHECK_MISMATCH
+     LIBSSH2_KNOWNHOST_CHECK_NOTFOUND
+     LIBSSH2_KNOWNHOST_CHECK_FAILURE
   ));
   ExtUtils::Constant::WriteConstants(
     NAME         => 'Net::SSH2',
