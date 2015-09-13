@@ -1,7 +1,7 @@
 ---
 abstract: 'Support for the SSH 2 protocol via libssh2.'
 author:
-  - '- 2010 by David B. Robins (dbrobins@cpan.org)'
+  - '- 2010 by David B. Robins (dbrobins@cpan.org).'
 build_requires:
   ExtUtils::MakeMaker: 6.59
 configure_requires:
@@ -24,4 +24,4 @@ requires:
 resources:
   license: http://dev.perl.org/licenses/
   repository: git://github.com/rkitover/net-ssh2.git
-version: 0.54_01
+version: 0.54_02

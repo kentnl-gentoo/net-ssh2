@@ -1776,12 +1776,21 @@ PREINIT:
     STRLEN len_buffer, offset = 0;
     int count = 0;
 CODE:
+    /*
+       1. in blocking mode, write all the data.
+       2. in non-blocking mode, write as much data as possible without
+          blocking.
+       3. if some error happens...
+          a. if some data was already written, discard the error and
+             report the number of bytes written.
+          b. if no data was written, report the error.
+    */
     clear_error(ch->ss);
     pv_buffer = SvPV(buffer, len_buffer);
     while (offset < len_buffer) {
-        int count = libssh2_channel_write_ex(ch->channel, XLATEXT,
-                                             pv_buffer + offset,
-                                             len_buffer - offset);
+        count = libssh2_channel_write_ex(ch->channel, XLATEXT,
+                                         pv_buffer + offset,
+                                         len_buffer - offset);
         if (count >= 0)
             offset += count;
         else if (!((count == LIBSSH2_ERROR_EAGAIN) &&
