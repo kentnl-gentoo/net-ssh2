@@ -18,9 +18,27 @@ no_index:
     - example
     - inc
     - t
+provides:
+  Net::SSH2:
+    file: lib/Net/SSH2.pm
+    version: '0.55'
+  Net::SSH2::Channel:
+    file: lib/Net/SSH2/Channel.pm
+  Net::SSH2::Dir:
+    file: lib/Net/SSH2/Dir.pm
+  Net::SSH2::File:
+    file: lib/Net/SSH2/File.pm
+  Net::SSH2::KnownHosts:
+    file: lib/Net/SSH2/KnownHosts.pm
+  Net::SSH2::Listener:
+    file: lib/Net/SSH2/Listener.pm
+  Net::SSH2::PublicKey:
+    file: lib/Net/SSH2/PublicKey.pm
+  Net::SSH2::SFTP:
+    file: lib/Net/SSH2/SFTP.pm
 requires:
   perl: '5.006'
 resources:
   license: http://dev.perl.org/licenses/
   repository: git://github.com/rkitover/net-ssh2.git
-version: 0.54_02
+version: '0.55'
