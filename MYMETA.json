@@ -4,7 +4,7 @@
       "- 2010 by David B. Robins (dbrobins@cpan.org)."
    ],
    "dynamic_config" : 0,
-   "generated_by" : "Module::Install version 1.14, CPAN::Meta::Converter version 2.140640",
+   "generated_by" : "Module::Install version 1.16, CPAN::Meta::Converter version 2.140640",
    "license" : [
       "perl_5"
    ],
