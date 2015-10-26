@@ -22,6 +22,8 @@ BEGIN { use_ok('Net::SSH2', ':all') };
 my $ssh2 = Net::SSH2->new();
 isa_ok($ssh2, 'Net::SSH2', 'new session');
 ok(!$ssh2->error(), 'error state clear');
+#$ssh2->trace(-1);
+
 ok($ssh2->banner('SSH TEST'), 'set banner');
 is(LIBSSH2_ERROR_SOCKET_NONE(), -1, 'LIBSSH2_* constants');
 
@@ -161,21 +163,22 @@ is($stat{name}, $dir, 'directory name matches');
 # (4) SCP
 my $remote = "$dir/".basename($0);
 ok($ssh2->scp_put($0, $remote), "put $0 to remote");
+
 SKIP: { # SKIP-scalar
-eval { require IO::Scalar };
-skip '- IO::Scalar required', 2 if $@;
-my $check = IO::Scalar->new;
-ok($ssh2->scp_get($remote, $check), "get $remote from remote");
-SKIP: { # SKIP-slurp
-eval { require File::Slurp };
-skip '- File::Slurp required', 1 if $@;
-if($^O =~ /MSWin32/i) {
-  is(${$check->sref}, File::Slurp::read_file($0, binmode => ':raw'), 'files match');
-}
-else {
-  is(${$check->sref}, File::Slurp::read_file($0), 'files match');
-}
-} # SKIP-slurp
+    eval { require IO::Scalar };
+    skip '- IO::Scalar required', 2 if $@;
+    my $check = IO::Scalar->new;
+    ok($ssh2->scp_get($remote, $check), "get $remote from remote");
+ SKIP: { # SKIP-slurp
+        eval { require File::Slurp };
+        skip '- File::Slurp required', 1 if $@;
+        if($^O =~ /MSWin32/i) {
+            is(${$check->sref}, File::Slurp::read_file($0, binmode => ':raw'), 'files match');
+        }
+        else {
+            is(${$check->sref}, File::Slurp::read_file($0), 'files match');
+        }
+    } # SKIP-slurp
 } # SKIP-scalar
 
 # (3) rename
@@ -266,4 +269,3 @@ ok($ssh2->disconnect('leaving'), 'sent disconnect message');
 } # SKIP-connect
 
 # vim:filetype=perl
-

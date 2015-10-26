@@ -55,6 +55,23 @@ name 'Net-SSH2';
 all_from 'lib/Net/SSH2.pm';
 perl_version '5.006000';
 
+my @extra_search_paths;
+
+# mac homebrew support
+if ($^O eq 'darwin' && -x '/usr/local/bin/brew') {
+    system("/usr/local/bin/brew info libssh2 | grep '^Not installed' >/dev/null");
+    if ($? >> 8 == 0) {
+        system("/usr/local/bin/brew -v install libssh2");
+    }
+    system("/usr/local/bin/brew info openssl | grep '^Not installed' >/dev/null");
+    if ($? >> 8 == 0) {
+        system("/usr/local/bin/brew -v install openssl");
+    }
+
+    push @extra_search_paths, 
+        (sort { (stat($b))[9] <=> (stat($a))[9] } glob('/usr/local/Cellar/openssl/*'))[0];
+}
+
 my @search_paths = (
   (split /\Q$Config{path_sep}\E/, $ENV{LD_RUN_PATH}),
   (split /\Q$Config{path_sep}\E/, ($^O eq 'darwin' ?
@@ -63,6 +80,7 @@ my @search_paths = (
   (split ' ', $Config{libspath}),
   $Config{siteprefixexp}, $Config{prefixexp},
   '/usr/local/ssl', '/usr', '/usr/local', '/opt', '/opt/local', '/',
+  @extra_search_paths
 );
 
 my %seen;
@@ -114,13 +132,25 @@ distribution.
 EOF
 
 if (!$lib && !$inc) {
+    checklibs( lib => 'ssh2',
+               header => 'libssh2.h',
+               libpath => [@search_libs],
+               incpath => [@search_incs] );
 
-    checklibs
-        lib => 'ssh2',
-        header => 'libssh2.h',
-        libpath => [@search_libs],
-        incpath => [@search_incs],
-    ;
+    unless ($win32) {
+        if ($use_gcrypt) {
+            checklibs( lib => 'gcrypt',
+                       header => 'gcrypt.h',
+                       libpath => [@search_libs],
+                       incpath => [@search_incs] );
+        }
+        else {
+            checklibs( lib => 'ssl',
+                      header => 'openssl/crypto.h',
+                      libpath => [@search_libs],
+                      incpath => [@search_incs] );
+        }
+    }
 
     $lib = (join ' ', map "-L$_", @search_libs) . " -lssh2 $extra_libs";
     $inc =  join ' ', map "-I$_", @search_incs;
