@@ -37,6 +37,33 @@
          }
       }
    },
+   "provides" : {
+      "Net::SSH2" : {
+         "file" : "lib/Net/SSH2.pm",
+         "version" : "0.57_02"
+      },
+      "Net::SSH2::Channel" : {
+         "file" : "lib/Net/SSH2/Channel.pm"
+      },
+      "Net::SSH2::Dir" : {
+         "file" : "lib/Net/SSH2/Dir.pm"
+      },
+      "Net::SSH2::File" : {
+         "file" : "lib/Net/SSH2/File.pm"
+      },
+      "Net::SSH2::KnownHosts" : {
+         "file" : "lib/Net/SSH2/KnownHosts.pm"
+      },
+      "Net::SSH2::Listener" : {
+         "file" : "lib/Net/SSH2/Listener.pm"
+      },
+      "Net::SSH2::PublicKey" : {
+         "file" : "lib/Net/SSH2/PublicKey.pm"
+      },
+      "Net::SSH2::SFTP" : {
+         "file" : "lib/Net/SSH2/SFTP.pm"
+      }
+   },
    "release_status" : "testing",
    "resources" : {
       "license" : [
@@ -47,5 +74,5 @@
          "url" : "git://github.com/rkitover/net-ssh2.git"
       }
    },
-   "version" : "0.57_01"
+   "version" : "0.57_02"
 }
