@@ -13,6 +13,22 @@ TYPEMAP
     SSH2_PUBLICKEY*   O_PUBLICKEY
     SSH2_KNOWNHOSTS*  O_KNOWNHOSTS
 
+    SSH2_RC       T_SSH2_RC
+    SSH2_ERROR    T_SSH2_ERROR
+    SSH2_NERROR   T_SSH2_NERROR
+    SSH2_BYTES    T_SSH2_BYTES
+    SSH2_BYTES64  T_SSH2_BYTES64
+    SSH2_BOOL     T_SSH2_BOOL
+
+    SSH2_METHOD  T_SSH2_METHOD
+    SSH2_FLAG    T_SSH2_FLAG
+    SSH2_CALLBACK T_SSH2_CALLBACK
+    SSH2_HOSTKEY_HASH T_SSH2_HOSTKEY_HASH
+    SSH2_CHANNEL_EXTENDED_DATA T_SSH2_CHANNEL_EXTENDED_DATA
+
+    SSH2_CHARP         T_SSH2_CHARP
+    SSH2_CHARP_OR_NULL T_SSH2_CHARP_OR_NULL
+
 OUTPUT
 T_PV
     sv_setpv((SV*)$arg, $var);
@@ -20,26 +36,36 @@ T_PV
 T_AVREF
     $arg = newRV((SV*)$var);
 
+T_SSH2_BYTES
+    $arg = ( (($var) < 0) ? &PL_sv_undef : newSVuv($var) );
+
+T_SSH2_BYTES64
+#if (IVSIZE >= 8)
+    $arg = ( (($var) < 0) ? &PL_sv_undef : newSVuv($var) );
+#else
+    $arg = ( (($var) < 0) ? &PL_sv_undef : newSVnv($var) );
+#endif
+
+T_SSH2_BOOL
+    $arg = (($var) ? &PL_sv_yes : &PL_sv_no);
+
+T_SSH2_RC
+    $arg = (($var) ? &PL_sv_yes : &PL_sv_undef);
+
+T_SSH2_ERROR
+    $arg = newSViv($var);
+
+T_SSH2_NERROR
+    $arg = ( (($var) < 0) ? &PL_sv_undef : &PL_sv_yes );
+
+T_SSH2_CHARP_OR_NULL
+    $arg = ($var ? &PL_sv_undef : sv_2mortal(newSVpv($var, 0)));
+
 O_SESSION
     sv_setref_pv($arg, "Net::SSH2", (void *)$var);
 
 O_CHANNEL
-    {
-    GV* gv = (GV*)newSVrv($arg, "Net::SSH2::Channel");
-    IO* io = (IO*)newSV(0);
-    const char* name = form("_GEN_%ld", (long)net_ch_gensym++);
-    SvUPGRADE((SV*)gv, SVt_PVGV);
-    SvUPGRADE((SV*)io, SVt_PVIO);
-    gv_init(gv, gv_stashpv("Net::SSH2::Channel", 0/*create*/),
-     name, strlen(name), 0/*multi*/);
-    GvSV(gv) = newSViv(PTR2IV($var));
-    GvIOp(gv) = io;
-    if (PERL_VERSION > 6) {
-      sv_magic((SV*)io, newRV((SV*)gv), PERL_MAGIC_tiedscalar, Nullch, 0);
-    } else {
-      sv_magic((SV*)gv, newRV((SV*)gv), PERL_MAGIC_tiedscalar, Nullch, 0);
-    }
-    }
+    wrap_tied_into($arg, "Net::SSH2::Channel", (void *)$var);
 
 O_LISTENER
     sv_setref_pv($arg, "Net::SSH2::Listener", (void *)$var);
@@ -48,22 +74,7 @@ O_SFTP
     sv_setref_pv($arg, "Net::SSH2::SFTP", (void *)$var);
 
 O_FILE
-    {
-    GV* gv = (GV*)newSVrv($arg, "Net::SSH2::File");
-    IO* io = (IO*)newSV(0);
-    const char* name = form("_GEN_%ld", (long)net_fi_gensym++);
-    SvUPGRADE((SV*)gv, SVt_PVGV);
-    SvUPGRADE((SV*)io, SVt_PVIO);
-    gv_init(gv, gv_stashpv("Net::SSH2::File", 0/*create*/),
-     name, strlen(name), 0/*multi*/);
-    GvSV(gv) = newSViv(PTR2IV($var));
-    GvIOp(gv) = io;
-    if (PERL_VERSION > 6) {
-      sv_magic((SV*)io, newRV((SV*)gv), PERL_MAGIC_tiedscalar, Nullch, 0);
-    } else {
-      sv_magic((SV*)gv, newRV((SV*)gv), PERL_MAGIC_tiedscalar, Nullch, 0);
-    }
-    }
+    wrap_tied_into($arg, "Net::SSH2::File", (void *)$var);
 
 O_DIR
     sv_setref_pv($arg, "Net::SSH2::Dir", (void *)$var);
@@ -85,49 +96,49 @@ T_AVREF
         croak(\"$var is not an array reference\");
 
 O_SESSION
-    if(sv_isobject($arg) && (SvTYPE(SvRV($arg)) == SVt_PVMG))
-        $var = ($type)SvIV((SV*)SvRV($arg));
-    else
-        croak(\"${Package}::$func_name() - invalid session object\");
+    $var = INT2PTR($type, unwrap($arg, \"$Package\", \"$func_name\"));
 
 O_CHANNEL
-    if(sv_isobject($arg) && (SvTYPE(SvRV($arg)) == SVt_PVGV))
-        $var = ($type)SvIVX(GvSV((GV*)SvRV($arg)));
-    else
-        croak(\"${Package}::$func_name() - invalid channel object\");
+    $var = INT2PTR($type, unwrap_tied($arg, \"$Package\", \"$func_name\"));
 
 O_LISTENER
-    if(sv_isobject($arg) && (SvTYPE(SvRV($arg)) == SVt_PVMG))
-        $var = ($type)SvIV((SV*)SvRV($arg));
-    else
-        croak(\"${Package}::$func_name() - invalid listener object\");
+    $var = INT2PTR($type, unwrap($arg, \"$Package\", \"$func_name\"));
 
 O_SFTP
-    if(sv_isobject($arg) && (SvTYPE(SvRV($arg)) == SVt_PVMG))
-        $var = ($type)SvIV((SV*)SvRV($arg));
-    else
-        croak(\"${Package}::$func_name() - invalid SFTP object\");
+    $var = INT2PTR($type, unwrap($arg, \"$Package\", \"$func_name\"));
 
 O_FILE
-    if(sv_isobject($arg) && (SvTYPE(SvRV($arg)) == SVt_PVGV))
-        $var = ($type)SvIVX(GvSV((GV*)SvRV($arg)));
-    else
-        croak(\"${Package}::$func_name() - invalid SFTP file object\");
+    $var = INT2PTR($type, unwrap_tied($arg, \"$Package\", \"$func_name\"));
 
 O_DIR
-    if(sv_isobject($arg) && (SvTYPE(SvRV($arg)) == SVt_PVMG))
-        $var = ($type)SvIV((SV*)SvRV($arg));
-    else
-        croak(\"${Package}::$func_name() - invalid SFTP directory object\");
+    $var = INT2PTR($type, unwrap($arg, \"$Package\", \"$func_name\"));
 
 O_PUBLICKEY
-    if(sv_isobject($arg) && (SvTYPE(SvRV($arg)) == SVt_PVMG))
-        $var = ($type)SvIV((SV*)SvRV($arg));
-    else
-        croak(\"${Package}::$func_name() - invalid public key object\");
+    $var = INT2PTR($type, unwrap($arg, \"$Package\", \"$func_name\"));
 
 O_KNOWNHOSTS
-    if(sv_isobject($arg) && (SvTYPE(SvRV($arg)) == SVt_PVMG))
-        $var = ($type)SvIV((SV*)SvRV($arg));
-    else
-        croak(\"${Package}::$func_name() - invalid knownhost object\");
+    $var = INT2PTR($type, unwrap($arg, \"$Package\", \"$func_name\"));
+
+T_SSH2_BOOL
+    $var = SvTRUE($arg);
+
+T_SSH2_METHOD
+    $var = sv2iv_constant_or_croak(\"METHOD\", $arg);
+
+T_SSH2_FLAG
+    $var = sv2iv_constant_or_croak(\"FLAG\", $arg);
+
+T_SSH2_CALLBACK
+    $var = sv2iv_constant_or_croak(\"CALLBACK\", $arg);
+
+T_SSH2_HOSTKEY_HASH
+    $var = sv2iv_constant_or_croak(\"HOSTKEY_HASH\", $arg);
+
+T_SSH2_CHANNEL_EXTENDED_DATA
+    $var = sv2iv_constant_or_croak(\"CHANNEL_EXTENDED_DATA\", $arg);
+
+T_SSH2_CHARP
+    $var = SvPVbyte_nolen($arg);
+
+T_SSH2_CHARP_OR_NULL
+    $var = (SvOK($arg) ? SvPVbyte_nolen($arg) : NULL);

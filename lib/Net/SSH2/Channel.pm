@@ -22,6 +22,16 @@ sub error {
     shift->session->error(@_)
 }
 
+sub setenv {
+    my ($self, %env) = @_;
+    my $rc = 1;
+    while (my ($k, $v) = each %env) {
+        $self->_setenv($k, $v)
+            or undef $rc;
+    }
+    $rc
+}
+
 
 # tie interface
 
@@ -102,7 +112,10 @@ method can be used to check for read/write availability and other conditions.
 
 Sets remote environment variables.  Note that most implementations do not allow
 environment variables to be freely set.  Pass in a list of keys and values
-with the values to set.  Returns the number of successful sets.
+with the values to set.
+
+It returns a true value when all the given environment variables are
+correctly set.
 
 =head2 blocking ( flag )
 
@@ -193,10 +206,12 @@ Attempts to write the buffer to the channel.  Returns number of bytes written,
 undef on failure.  If ext is present and set, writes to the extended data
 channel (stderr).
 
-In case the write operation would block and non-blocking mode is
-active then it returns LIBSSH2_ERROR_AGAIN without setting the global
-session error (yes, that's quite ugly, but it is how the underlying
-libssh2 works).
+In versions of this module prior to 0.57, when working in
+non-blocking mode, the would-block condition was signaled by returning
+LIBSSH2_ERROR_EAGAIN (a negative number) while leaving the session
+error status unset. From version 0.56, C<undef> is returned and the
+session error status is set to LIBSSH2_ERROR_EAGAIN in a similar
+fashion to the other errors.
 
 =head2 flush ( [ ext ] )
 

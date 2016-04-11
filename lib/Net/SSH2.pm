@@ -1,6 +1,6 @@
 package Net::SSH2;
 
-our $VERSION = '0.58';
+our $VERSION = '0.59_01';
 
 use 5.006;
 use strict;
@@ -227,27 +227,40 @@ my $socket_class = do {
 # methods
 
 sub new {
-    my $class = shift;
-    my %opts  = @_;
-
+    my ($class, %opts) = @_;
     my $self = $class->_new;
 
-    $self->trace($opts{trace}) if defined $opts{trace};
+    for (qw(trace timeout)) {
+        $self->$_($opts{$_}) if defined $opts{$_}
+    }
+    $self->flag(COMPRESS => $opts{compress})
+        if defined $opts{compress} and (version())[1] >= 0x10500;
+    $self->flag(SIGPIPE => $opts{sigpipe})
+        if defined $opts{sigpipe};
 
     return $self;
 }
 
+sub method {
+    my $self = shift;
+    my $method_type = shift;
+    $self->_method($method_type => (@_ ? join(',', @_) : ()));
+}
+
+my $connect_opts_warned;
+my $connect_fd_warned;
+my $connect_void_warned;
 sub connect {
     my $self = shift;
     croak "Net::SSH2::connect: not enough parameters" if @_ < 1;
-
-    my $wantarray = wantarray;
 
     # try to connect, or get a file descriptor
     my ($fd, $sock);
     if (@_ == 1) {
         $sock = shift;
         if ($sock =~ /^\d{1,10}$/) {
+            $connect_fd_warned++ or
+                carp "passing a file descriptor number to connect is deprecated";
             $fd = $sock;
         } elsif(ref $sock) {
             # handled below
@@ -256,43 +269,56 @@ sub connect {
         }
     }
 
-    my %opts = splice @_, 2 if @_ >= 4;
-    $opts{Timeout} ||= 30;
+    my %opts = splice @_, 2;
+    if (%opts) {
+        $connect_opts_warned++ or
+            carp "passing options to connect is deprectated";
+        $self->timeout($opts{Timeout}) if $opts{Timeout};
+        if ($opts{Compress} and
+            ($self->version)[1] >= 0x10500) {
+            $self->flag(COMPRESS => 1);
+        }
+    }
 
     if (@_ == 2) {
-        $sock = $socket_class->new(
-            PeerHost => $_[0],
-            PeerPort => $_[1],
-            Timeout => $opts{Timeout},
-        );
-
-        if (not $sock) {
-            if (not defined $wantarray) {
-                croak "Net::SSH2: failed to connect to $_[0]:$_[1]: $!"
-            } else {
-                return; # to support ->connect ... or die
-            }
+        my $timeout = $self->timeout;
+        my $blocking = $self->blocking;
+        $sock = $socket_class->new( PeerHost => $_[0],
+                                    PeerPort => $_[1],
+                                    Blocking => $blocking,
+                                    Timeout => $timeout );
+        unless ($sock) {
+            $self->_set_error(LIBSSH2_ERROR_SOCKET_NONE(), "Unable to connect to remote host: $!");
+            goto error;
         }
 
         $sock->sockopt(SO_LINGER, pack('SS', 0, 0));
     }
 
     # get a file descriptor
-    $fd ||= fileno($sock);
-    croak "Net::SSH2::connect: can't get file descriptor for $sock"
-     unless defined $fd;
+    unless (defined $fd) {
+        $fd = fileno($sock);
+        unless (defined $fd) {
+            $self->_set_error(LIBSSH2_ERROR_SOCKET_NONE(), "Unable to get file descriptor from socket: $!");
+            goto error;
+        }
+    }
+
     if ($^O eq 'MSWin32') {
         require Win32API::File;
         $fd = Win32API::File::FdGetOsFHandle($fd);
     }
 
-    # enable compression when requested and if the underlying libssh2
-    # supports it
-    $self->flag(COMPRESS => 1)
-        if $opts{Compress} and ($self->version)[1] >= 0x010200;
-
     # pass it in, do protocol
     return $self->_startup($fd, $sock);
+
+ error:
+    unless (defined wantarray) {
+        $connect_void_warned++ or
+            carp "calling connect in void context is deprecated";
+        croak "Net::SSH2: failed to connect to $_[0]:$_[1]: $!"
+    }
+    return;
 }
 
 sub _auth_methods {
@@ -621,6 +647,12 @@ sub hostkey {
     shift->hostkey_hash(@_);
 }
 
+sub auth_list {
+    my $auth = shift->_auth_list(@_);
+    return unless defined $auth;
+    wantarray ? split(/,/, $auth) : $auth
+}
+
 # mechanics
 
 sub AUTOLOAD {
@@ -664,7 +696,7 @@ Net::SSH2 - Support for the SSH 2 protocol via libssh2.
 
   my $ssh2 = Net::SSH2->new();
 
-  $ssh2->connect('example.com') or die $!;
+  $ssh2->connect('example.com') or die $ssh2->error;
 
   if ($ssh2->auth_keyboard('fizban')) {
       my $chan = $ssh2->channel();
@@ -1295,9 +1327,9 @@ L<Net::OpenSSH::Compat>.
 
 Copyright (C) 2005 - 2010 by David B. Robins (dbrobins@cpan.org).
 
-Copyright (C) 2010 - 2015 by Rafael Kitover (rkitover@cpan.org).
+Copyright (C) 2010 - 2016 by Rafael Kitover (rkitover@cpan.org).
 
-Copyright (C) 2011 - 2015 by Salvador FandiE<ntilde>o (salva@cpan.org).
+Copyright (C) 2011 - 2016 by Salvador FandiE<ntilde>o (salva@cpan.org).
 
 All rights reserved.
 

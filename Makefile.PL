@@ -1,105 +1,20 @@
 use inc::Module::Install 0.91;
 use Cwd;
 use Config;
+use File::Glob qw(bsd_glob);
 
-# override library and include directories here if desired
-my $lib = $ENV{LIBSSH2_LIB} || '';
-my $inc = $ENV{LIBSSH2_INCLUDE} || '';
-my $extra_libs = '-lz' . ($ENV{LIBSSH2_LDARGS} ? (' ' . $ENV{LIBSSH2_LDARGS}) : '');
-my $ldargs; # from command line
-my $use_gcrypt = 0;
+use strict;
+use warnings;
 
-my @args = @ARGV;
-my @pass_through_args;
-while (my $arg = shift @args) {
-    if (my ($param, $val) = $arg =~ /^(inc|lib|ldargs)=(.*)\z/) {
-        my $var = $param eq 'inc' ? \$inc : ($param eq 'lib' ? \$lib : \$ldargs);
-        $$var   = $val;
-        next;
-    }
-    elsif ($arg eq 'gcrypt') {
-        $use_gcrypt = 1;
-        next;
-    }
-    push @pass_through_args, $arg;
-}
-@ARGV = @pass_through_args;
+my $win32   = ($^O eq 'MSWin32');
+my $darwin  = ($^O eq 'darwin');
+my $solaris = ($^O eq 'solaris');
+my $linux   = !($win32 || $darwin || $solaris ); # yea, more than linux are going to end here!
 
-# Windows, as usual, is a special case
-my $win32 = ($^O eq 'MSWin32');
+my $cc_gcc   = $Config{cc} =~ /gcc/;
+my $cc_wincl = $win32 && $Config{cc} =~ /cl/;
 
-if ($use_gcrypt) {
-    $extra_libs .= ' -lgcrypt';
-}
-else {
-  if ($win32 && $Config{cc} =~ /cl/) {
-    $extra_libs .= ' -lssleay32 -llibeay32'; # Win32 + MSVC compiler
-  }
-  if ($win32 && $Config{cc} =~ /gcc/) {
-    $extra_libs .= ' -lssl32 -leay32'; # Win32 + GCC compiler (mingw)
-  }
-  else {
-    $extra_libs .= ' -lssl -lcrypto';
-  }
-}
-
-$extra_libs = "$extra_libs $ldargs" if $ldargs;
-
-my $defines = '';
-$defines .= '-DLIBSSH2_WIN32 ' if $win32;
-$defines .= '-DUSE_GCRYPT ' if $use_gcrypt;
-my @define = $defines ? (DEFINE => $defines) : ();
-
-name 'Net-SSH2';
-all_from 'lib/Net/SSH2.pm';
-perl_version '5.006000';
-
-my @extra_search_paths;
-
-# mac homebrew support
-if ($^O eq 'darwin' && -x '/usr/local/bin/brew') {
-    system("/usr/local/bin/brew info libssh2 | grep '^Not installed' >/dev/null");
-    if ($? >> 8 == 0) {
-        system("/usr/local/bin/brew -v install libssh2");
-    }
-    system("/usr/local/bin/brew info openssl | grep '^Not installed' >/dev/null");
-    if ($? >> 8 == 0) {
-        system("/usr/local/bin/brew -v install openssl");
-    }
-
-    push @extra_search_paths, 
-        (sort { (stat($b))[9] <=> (stat($a))[9] } glob('/usr/local/Cellar/openssl/*'))[0];
-}
-
-my @search_paths = (
-  (split /\Q$Config{path_sep}\E/, $ENV{LD_RUN_PATH}),
-  (split /\Q$Config{path_sep}\E/, ($^O eq 'darwin' ?
-    $ENV{DYLD_LIBRARY_PATH} : $ENV{LD_LIBRARY_PATH})),
-  $ENV{HOME}, ($ENV{HOME}."/libssh2"),
-  (split ' ', $Config{libspath}),
-  $Config{siteprefixexp}, $Config{prefixexp},
-  '/usr/local/ssl', '/usr', '/usr/local', '/opt', '/opt/local', '/',
-  @extra_search_paths
-);
-
-my %seen;
-foreach my $path (@search_paths) {
-    $seen{$path}++;
-}
-my (%skip, @without_dups);
-foreach my $path (@search_paths) {
-    next if $skip{$path};
-
-    if ($seen{$path} > 1) {
-        $skip{$path} = 1;
-    }
-
-    push @without_dups, $path;
-}
-@search_paths = @without_dups;
-
-my @search_libs = grep -d, map +("$_/lib", "$_/lib64", $_), @search_paths;
-my @search_incs = grep -d, map "$_/include", @search_paths;
+my $path_sep = $Config{path_sep};
 
 print <<'EOF';
 
@@ -130,59 +45,234 @@ distribution.
 
 EOF
 
-if (!$lib && !$inc) {
-    checklibs( lib => 'ssh2',
-               header => 'libssh2.h',
-               libpath => [@search_libs],
-               incpath => [@search_incs] );
+my $crypto_backend;
+my $do_not_check_libs;
 
-    unless ($win32) {
-        if ($use_gcrypt) {
-            checklibs( lib => 'gcrypt',
-                       header => 'gcrypt.h',
-                       libpath => [@search_libs],
-                       incpath => [@search_incs] );
-        }
-        else {
-            checklibs( lib => 'ssl',
-                      header => 'openssl/crypto.h',
-                      libpath => [@search_libs],
-                      incpath => [@search_incs] );
-        }
+sub makemaker_append_once;
+sub capture;
+sub findlib;
+
+name 'Net-SSH2';
+all_from 'lib/Net/SSH2.pm';
+perl_version '5.006000';
+auto_provides;
+makemaker_append_once CCFLAGS   => $Config{ccflags};
+makemaker_append_once LDDLFLAGS => $Config{lddlflags};
+
+my %arg2mmappend = ( inc => 'INC',
+                     lib => 'LDDLFLAGS',
+                     ldargs => 'LDDLFLAGS' );
+my %arg2prefix = (inc => '-I',
+                  lib => '-L');
+
+my $arg_keys = join('|', map quotemeta, keys %arg2mmappend);
+my $do_not_check_libs_keys = 'lib|inc';
+
+for (keys %ENV) {
+    makemaker_append_once $arg2mmappend{lc $1} => ($arg2prefix{lc $1} || '').$ENV{$_}
+        if /^LIBSSH2_($arg_keys)$/;
+    $do_not_check_libs ||= /^LIBSSH2_($do_not_check_libs_keys)$/i;
+}
+
+my @pass_through_args;
+for (@ARGV) {
+    if (/^($arg_keys)=(.*)\z/) {
+        makemaker_append_once $arg2mmappend{$1} => ($arg2prefix{$1} || '').$2;
+        $do_not_check_libs ||= /^($do_not_check_libs_keys)=/;
+    }
+    elsif ($_ eq 'gcrypt') {
+        $crypto_backend = 'gcrypt';
+    }
+    elsif ($_ eq 'openssl') {
+        $crypto_backend = 'openssl';
+    }
+    else {
+        push @pass_through_args, $_;
+    }
+}
+@ARGV = @pass_through_args;
+
+my @search_paths;
+for my $env ('LD_RUN_PATH', ($darwin ? 'DYLD_LIBRARY_PATH' : 'LD_LIBRARY_PATH')) {
+    my $v = $ENV{$env};
+    push @search_paths, split(/\Q$path_sep\E/, $v) if defined $v;
+}
+push @search_paths,
+    split(' ', $Config{libspath}),
+    $Config{siteprefixexp}, $Config{prefixexp},
+    '/usr', '/usr/local', '/opt', '/opt/local',
+    '/usr/local/libssh2', '/opt/libssh2',
+    '/usr/local/libssh2/*', '/usr/local/ssl';
+
+push @search_paths, $ENV{HOME}, "$ENV{HOME}/libssh2" if defined $ENV{HOME};
+
+# mac homebrew support
+if ($^O eq 'darwin' && -x '/usr/local/bin/brew') {
+    system("/usr/local/bin/brew info libssh2 | grep '^Not installed' >/dev/null");
+    if ($? >> 8 == 0) {
+        system("/usr/local/bin/brew -v install libssh2");
+    }
+    system("/usr/local/bin/brew info openssl | grep '^Not installed' >/dev/null");
+    if ($? >> 8 == 0) {
+        system("/usr/local/bin/brew -v install openssl");
     }
 
-    $lib = (join ' ', map "-L$_", @search_libs) . " -lssh2 $extra_libs";
-    $inc =  join ' ', map "-I$_", @search_incs;
-} else {
-    $lib = "-L$lib -lssh2 $extra_libs" if $lib;
-    $inc = "-I$inc" if $inc;
+    push @search_paths, '/usr/local/Cellar/openssl/*';
 }
 
-my $extra_ccflags = ' ';
-if ($^O eq 'darwin') {
-	$extra_ccflags .= '-Wno-deprecated-declarations'
+@search_paths = map { /\*/
+                      ? (sort { (stat $b)[9] <=> (stat $a)[9] } grep -d, bsd_glob($_))
+                      : $_ } @search_paths;
+my %sp_seen;
+@search_paths = grep !$sp_seen{$_}++, @search_paths;
+
+sub findlib {
+    local $Module::Install::AUTHOR;
+    my %args = @_;
+    my @search_paths = @{delete $args{search_paths} || []};
+    for my $sp (undef, @search_paths) {
+        for my $libpath (defined $sp ? (map [$_], grep -d, "$sp/lib", "$sp/lib64", $sp) : []) {
+            my $incpath = (defined $sp ? [grep -d, "$sp/include"] : []);
+            my @ldflags = '';
+            push @ldflags, "-Wl,-rpath=".$libpath->[0] if $cc_gcc and defined $sp;
+            for my $ldflags (@ldflags) {
+                if (eval {
+                    assertlibs( %args,
+                                libpath => $libpath,
+                                incpath => $incpath,
+                                ldflags => $ldflags);
+                    1; }) {
+
+                    warn "Library $args{lib} found in ".(defined $sp ? $sp : "standard place")."\n";
+                    makemaker_append_once INC => "-I$_" for @$incpath;
+                    makemaker_append_once LIBS => "-L$_" for @$libpath;
+                    makemaker_append_once LIBS => "-l$args{lib}";
+                    makemaker_append_once LDDLFLAGS => $ldflags if $ldflags;
+                    return 1;
+                }
+            }
+        }
+    }
+    die "Unable to find a working version of library $args{lib} in the following directories:\n  ".
+        (join "\n  ", @search_paths)."\n";
 }
 
-auto_provides;
+unless ($do_not_check_libs) {
+    warn "Looking for libraries...\n";
+    my $detected_crypto_backend;
 
-libs $lib;
+    # This is a workaround for Module::Install::CheckLib behaving
+    # differently in user and author mode. Specifically, in author
+    # mode, we call M::I::CheckLib normally so that it can copy
+    # its files under "inc/", and then, we hide we are in author
+    # mode and call it again so that it actually runs the
+    # checklibs stuff..
+    if ($Module::Install::AUTHOR) {
+        eval {
+            assertlibs( lib => 'ssh2',
+                        header => 'libssh2.h',
+                        libpath => [],
+                        incpath => []);
+        };
+    }
 
-inc "$inc -I.";
+    findlib(lib => 'ssh2',
+            header => 'libssh2.h',
+            search_paths => \@search_paths,
+            function => <<EOF,
+                if (libssh2_init(0))
+                  return 1;
+                /* check that library and headers are on par */
+                return (libssh2_version(LIBSSH2_VERSION_NUM) ? 0 : 1);
+EOF
+            analyze_binary => sub {
+                warn "Analyzing file $_[1]";
+                my $out = capture ldd => $_[1];
+                # warn "out:\n$out";
+                if ($out =~ /gcrypt/i) {
+                    $detected_crypto_backend = 'gcrypt';
+                }
+                elsif ($out =~ /lib(ssl|crypto)/i) {
+                    $detected_crypto_backend = 'openssl';
+                }
+                else {
+                    warn "Unable to detect crypto backend used by libssh2!\n"
+                }
+                1;
+            },
+            run_checks_as_author => 1, );
 
-makemaker_args 
-    @define,
-    # this is known to NOT work on mingw, solaris and darwin, and we only turn it on for devs
-    ($Module::Install::AUTHOR && $^O ne 'MSWin32' && $^O ne 'solaris' && $^O ne 'darwin' && $Config{cc} =~ /gcc/i ? (
-        CCFLAGS => '-DPERL_GCC_PEDANTIC -std=c99 -pedantic-errors -Wno-long-long '
-    ) : (
-        CCFLAGS => $Config{ccflags} . $extra_ccflags
-    ))
-;
+    if (defined $detected_crypto_backend) {
+        if (defined $crypto_backend) {
+            $crypto_backend eq $detected_crypto_backend or
+                warn "Detected crypto backend ($detected_crypto_backend) does not match ".
+                     "the one requested on the command line ($crypto_backend)";
+        }
+        else {
+            warn "Detected crypto backend: $detected_crypto_backend\n";
+            $crypto_backend = $detected_crypto_backend;
+        }
+    }
+    $crypto_backend ||= 'openssl';
+
+    unless ($win32) {
+        findlib(lib => 'z',
+                header => 'zlib.h',
+                search_paths => \@search_paths,
+                run_checks_as_author => 1);
+
+        if ($crypto_backend eq 'gcrypt') {
+            findlib(lib => 'gcrypt',
+                    header => 'gcrypt.h',
+                    search_paths => \@search_paths,
+                    run_checks_as_author => 1);
+        }
+        else {
+            findlib(lib => 'ssl',
+                    header => 'openssl/ssl.h',
+                    search_paths => \@search_paths,
+                    run_checks_as_author => 1);
+
+            findlib(lib => 'crypto',
+                    header => 'openssl/crypto.h',
+                    search_paths => \@search_paths,
+                    run_checks_as_author => 1);
+        }
+    }
+}
+else {
+    $crypto_backend ||= 'openssl';
+}
+
+if ($crypto_backend eq 'gcrypt') {
+    makemaker_append_once(LDDLFLAGS => '-lgcrypt');
+}
+else {
+    if ($cc_wincl) {
+        makemaker_append_once(LIBS => "-l$_") for qw(ssleay32 libeay32); # Win32 + MSVC compiler
+    }
+    if ($cc_gcc && $win32) {
+        makemaker_append_once(LIBS => "-l$_") for qw(ssl32 eay32); # Win32 + GCC compiler (mingw)
+    }
+    else {
+        makemaker_append_once(LIBS => "-l$_") for qw(ssl crypto);
+    }
+}
+
+makemaker_append_once(DEFINE => '-DLIBSSH2_WIN32') if $win32;
+makemaker_append_once(DEFINE => '-DUSE_GCRYPT')    if $crypto_backend eq 'gcrypt';
+
+makemaker_append_once(CCFLAGS => '-Wno-deprecated-declarations') if $^O eq 'darwin';
+
+makemaker_append_once(CCFLAGS => '-DPERL_GCC_PEDANTIC -std=c99 -pedantic-errors -Wno-long-long')
+    if $Module::Install::AUTHOR and $linux and $cc_gcc;
 
 realclean_files qw/const-c.inc const-xs.inc/;
+resources repository => 'git://github.com/rkitover/net-ssh2.git';
 
-resources repository =>
-    'git://github.com/rkitover/net-ssh2.git';
+makemaker_append_once LIBS => '-lssh2', '-lz';
+
+
 
 WriteAll;
 
@@ -310,10 +400,29 @@ if  (eval {require ExtUtils::Constant; 1}) {
 
 }
 else {
-  use File::Copy;
-  use File::Spec;
+  require File::Copy;
+  require File::Spec;
   foreach my $file ('const-c.inc', 'const-xs.inc') {
     my $fallback = File::Spec->catfile('fallback', $file);
-    copy ($fallback, $file) or die "Can't copy $fallback to $file: $!";
+    File::Copy::copy ($fallback, $file) or die "Can't copy $fallback to $file: $!";
   }
 }
+
+my %appended;
+sub makemaker_append_once {
+    my $key = shift;
+    for (@_) {
+        makemaker_append $key, $_
+            unless $appended{$key}{$_}++;
+    }
+}
+
+sub capture {
+    if (open my $fh, '-|', @_) {
+        my $out  = do { local $/, <$fh> };
+        close $fh;
+        return $out;
+    }
+    ''
+}
+
