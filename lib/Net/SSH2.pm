@@ -1,6 +1,6 @@
 package Net::SSH2;
 
-our $VERSION = '0.59_01';
+our $VERSION = '0.59_02';
 
 use 5.006;
 use strict;
@@ -713,16 +713,55 @@ C<Net::SSH2> is a perl interface to the libssh2 (L<http://www.libssh2.org>)
 library.  It supports the SSH2 protocol (there is no support for SSH1)
 with all of the key exchanges, ciphers, and compression of libssh2.
 
+=head2 Error handling
+
 Unless otherwise indicated, methods return a true value on success and
 false on failure; use the error method to get extended error information.
 
-The typical order is to create the SSH2 object, set up the connection methods
-you want to use, call connect, authenticate with one of the C<auth> methods,
-then create channels on the connection to perform commands.
+=head2 Typical usage
 
-=head1 EXPORTS
+The typical usage order is as follows:
 
-Exports the following constant tags:
+=over 4
+
+=item 1
+
+Create the SSH2 object calling C<new>.
+
+=item 2
+
+Configure it if required. For instance, enabling compression or picking
+some specific encryption methods.
+
+=item 3
+
+Establish the SSH connection calling the method C<connect>.
+
+=item 4
+
+Check the remote host public key, typically comparing it to the one
+stored in /etc/ssh/known_hosts. See L<Net::SSH2::KnownHosts>.
+
+=item 5
+
+Authenticate calling one (or several) of the authentication methods
+provided.
+
+=item 6
+
+Create channels over the connection and use them.
+
+=item 7
+
+Close the connection letting the Net::SSH2 object go out of scope or
+calling C<disconnect> explicitly.
+
+=back
+
+=head1 CONSTANTS
+
+The module accepts the following tags that can be used to pick the set
+of constants to be imported.
 
 =over 4
 
@@ -732,7 +771,7 @@ All constants.
 
 =back
 
-ssh constants:
+SSH constants:
 
 =over 4
 
@@ -746,7 +785,7 @@ ssh constants:
 
 =item trace
 
-Tracing constants for use with C<< ->trace >> and C<< ->new(trace => ...) >>.
+Tracing constants for use with C<<$ssh2->trace>> and C<<$ssh2->new(trace =>...)>>.
 
 =item hash
 

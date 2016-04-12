@@ -19,7 +19,7 @@ DEPENDENCIES
 
 This module also requires these libraries:
 
-   libSSH2 (http://www.libssh2.org; recommended to use version 1.6.0 or later)
+   libssh2 (http://www.libssh2.org; recommended to use version 1.7.0 or later)
    OpenSSL (http://www.openssl.org)
    zlib (optional; http://www.zlib.net)
 
@@ -88,9 +88,9 @@ COPYRIGHT AND LICENCE
 
 Copyright (C) 2005-2008 by David B. Robins.
 
-Copyright (C) 2010 - 2016 by Rafael Kitover (rkitover@cpan.org).
+Copyright (C) 2010-2016 by Rafael Kitover (rkitover@cpan.org).
 
-Copyright (C) 2011 - 2016 by Salvador Fandi&ntilde;o (salva@cpan.org).
+Copyright (C) 2011-2016 by Salvador Fandino (salva@cpan.org).
 
 All rights reserved.
 
