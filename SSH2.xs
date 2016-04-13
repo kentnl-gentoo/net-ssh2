@@ -248,6 +248,8 @@ LIBSSH2_FREE_FUNC(local_free) {
     Safefree(ptr);
 }
 
+#define SV2TYPE(sv, type) ((type)((sizeof(IV) < sizeof(type)) ? SvNV(sv) : SvIV(sv)))
+
 static void
 wrap_tied_into(SV *to, const char *pkg, void *object) {
     GV* gv = (GV*)newSVrv(to, pkg);
@@ -1381,57 +1383,67 @@ OUTPUT:
 #if LIBSSH2_VERSION_NUM >= 0x10601
 
 SSH2_CHANNEL*
-net_ss__scp_get(SSH2* ss, SSH2_CHARP path, HV* stat = NULL)
+net_ss__scp_get(SSH2* ss, SSH2_CHARP path, HV* stat)
 PREINIT:
     libssh2_struct_stat st;
 CODE:
     NEW_CHANNEL(libssh2_scp_recv2(ss->session, path, &st));
-    if (stat) {
-        hv_clear(stat);
-        hv_store(stat, "mode",  4, newSVuv(st.st_mode),  0/*hash*/);
-        hv_store(stat, "uid",   3, newSVuv(st.st_uid),   0/*hash*/);
-        hv_store(stat, "gid",   3, newSVuv(st.st_gid),   0/*hash*/);
+    hv_clear(stat);
+    hv_store(stat, "mode",  4, newSVuv(st.st_mode),  0/*hash*/);
+    hv_store(stat, "uid",   3, newSVuv(st.st_uid),   0/*hash*/);
+    hv_store(stat, "gid",   3, newSVuv(st.st_gid),   0/*hash*/);
 #if IVSIZE >= 8
-        hv_store(stat, "size",  4, newSVuv(st.st_size),  0/*hash*/);
+    hv_store(stat, "size",  4, newSVuv(st.st_size),  0/*hash*/);
 #else
-        hv_store(stat, "size",  4, newSVnv(st.st_size),  0/*hash*/);
+    hv_store(stat, "size",  4, newSVnv(st.st_size),  0/*hash*/);
 #endif
-        hv_store(stat, "atime", 5, newSVuv((time_t)st.st_atime), 0/*hash*/);
-        hv_store(stat, "mtime", 5, newSViv((time_t)st.st_mtime), 0/*hash*/);
-    }
+    hv_store(stat, "atime", 5, newSVuv((time_t)st.st_atime), 0/*hash*/);
+    hv_store(stat, "mtime", 5, newSViv((time_t)st.st_mtime), 0/*hash*/);
 OUTPUT:
     RETVAL
 
 #else
 
 SSH2_CHANNEL*
-net_ss__scp_get(SSH2* ss, SSH2_CHARP path, HV* stat = NULL)
+net_ss__scp_get(SSH2* ss, SSH2_CHARP path, HV* stat)
 PREINIT:
     struct stat st;
 CODE:
     NEW_CHANNEL(libssh2_scp_recv(ss->session, path, &st));
-    if (stat) {
-        hv_clear(stat);
-        hv_store(stat, "mode",  4, newSVuv(st.st_mode),  0/*hash*/);
-        hv_store(stat, "uid",   3, newSVuv(st.st_uid),   0/*hash*/);
-        hv_store(stat, "gid",   3, newSVuv(st.st_gid),   0/*hash*/);
-        hv_store(stat, "size",  4, newSVuv(st.st_size),  0/*hash*/);
-        hv_store(stat, "atime", 5, newSVuv((time_t)st.st_atime), 0/*hash*/);
-        hv_store(stat, "mtime", 5, newSViv((time_t)st.st_mtime), 0/*hash*/);
-    }
+    hv_clear(stat);
+    hv_store(stat, "mode",  4, newSVuv(st.st_mode),  0/*hash*/);
+    hv_store(stat, "uid",   3, newSVuv(st.st_uid),   0/*hash*/);
+    hv_store(stat, "gid",   3, newSVuv(st.st_gid),   0/*hash*/);
+    hv_store(stat, "size",  4, newSVuv(st.st_size),  0/*hash*/);
+    hv_store(stat, "atime", 5, newSVuv((time_t)st.st_atime), 0/*hash*/);
+    hv_store(stat, "mtime", 5, newSViv((time_t)st.st_mtime), 0/*hash*/);
 OUTPUT:
     RETVAL
 
 #endif
 
+#if LIBSSH2_VERSION_NUM >= 0x10206
+
 SSH2_CHANNEL*
-net_ss__scp_put(SSH2* ss, SSH2_CHARP path, int mode, size_t size, \
-    long mtime = 0, long atime = 0)
+net_ss__scp_put(SSH2* ss, SSH2_CHARP path, int mode, SSH2_BYTES64 size, \
+                time_t mtime = 0, time_t atime = 0)
 CODE:
-    NEW_CHANNEL(libssh2_scp_send_ex(ss->session,
-     path, mode, size, mtime, atime));
+    NEW_CHANNEL(libssh2_scp_send64(ss->session,
+                                   path, mode, size, mtime, atime));
 OUTPUT:
     RETVAL
+
+#else
+SSH2_CHANNEL*
+net_ss__scp_put(SSH2* ss, SSH2_CHARP path, int mode, size_t size, \
+                long mtime = 0, long atime = 0)
+CODE:
+    NEW_CHANNEL(libssh2_scp_send_ex(ss->session,
+                                    path, mode, size, mtime, atime));
+OUTPUT:
+    RETVAL
+
+#endif
 
 SSH2_CHANNEL*
 net_ss_tcpip(SSH2* ss, SSH2_CHARP host, int port, \
@@ -2575,7 +2587,7 @@ CODE:
     rc = libssh2_knownhost_checkp(kh->knownhosts, host, port_uv,
                                   key_pv, key_len, typemask, &entry);
 #else
-    if ((port != 0) && (port != 22))
+    if ((port_uv != 0) && (port_uv != 22))
         croak("libssh2 version 1.2.6 is required when using a custom TCP port");
     rc = libssh2_knownhost_check(kh->knownhosts, host,
                                  key_pv, key_len, typemask, &entry);
@@ -2601,7 +2613,7 @@ CODE:
 
             if ((rc != LIBSSH2_ERROR_BUFFER_TOO_SMALL) ||
                 (SvLEN(buffer) > 256 * 1024)) break;
-                
+
             SvGROW(buffer, SvLEN(buffer) * 2);
         }
     }

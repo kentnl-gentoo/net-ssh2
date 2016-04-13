@@ -1,6 +1,6 @@
 package Net::SSH2;
 
-our $VERSION = '0.59_03';
+our $VERSION = '0.59_04';
 
 use 5.006;
 use strict;
@@ -451,26 +451,43 @@ sub _load_term_readkey {
     return;
 }
 
+sub _print_stderr {
+    my $self = shift;
+    my $ofh = select STDERR; local $|= 1; select $ofh;
+    print STDERR $_ for @_;
+}
+
+sub _ask_user {
+    my ($self, $prompt, $echo) = @_;
+    _load_term_readkey or return;
+    $self->_print_stderr($prompt);
+    Term::ReadKey::ReadMode('noecho') unless $echo;
+    my $reply = Term::ReadKey::ReadLine(0);
+    Term::ReadKey::ReadMode('normal') unless $echo;
+    $self->_print_stderr("\n") unless $echo;
+    chomp $reply;
+    return $reply;
+}
+
 sub auth_password_interact {
     my ($self, $username, $cb) = @_;
     _load_term_readkey or return;
-    local $| = 1;
     my $rc;
     for (0..2) {
-        print "[user $username] password?\n";
-        Term::ReadKey::ReadMode('noecho');
-        my $password = Term::ReadKey::ReadLine(0);
-        Term::ReadKey::ReadMode('normal');
-        chomp $password;
+        my $password = $self->_ask_user("${username}'s password? ", 0);
         $rc = $self->auth_password($username, $password, $cb);
         last if $rc or $self->error != LIBSSH2_ERROR_AUTHENTICATION_FAILED();
-        print "Password authentication failed!\n";
+        my $ofh = select STDERR; local $|= 1; select $ofh;
+        $self->_print_stderr("Password authentication failed!\n");
     }
     return $rc;
 }
 
 sub check_remote_hostkey {
     my ($self, $path, $policy) = @_;
+
+    return 1 if $policy eq 'advisory'; # user doesn't care!
+
     my $remote_hostname = $self->remote_hostname;
     croak("remote_hostname unknown: in order to use check_remote_hostkey the peer host name ".
           "must be given (or discoverable) at connect time")
@@ -487,7 +504,8 @@ sub check_remote_hostkey {
     }
 
     my $kh = $self->known_hosts or return;
-    $kh->readfile($path) or return;
+    my $n_ent = $kh->readfile($path);
+    defined $n_ent or return;
 
     my ($key, $type) = $self->remote_hostkey;
     my $flags = ( LIBSSH2_KNOWNHOST_TYPE_PLAIN() |
@@ -497,7 +515,22 @@ sub check_remote_hostkey {
     my $check = $kh->check($remote_hostname, $self->remote_port, $key, $flags);
     $check == LIBSSH2_KNOWNHOST_CHECK_MATCH() and return 1;
 
-    # TODO: implement other policies!
+    if ($check == LIBSSH2_KNOWNHOST_CHECK_NOTFOUND()) {
+        if ($policy eq 'ask') {
+            my $fp = unpack 'H*', $self->hostkey_hash(LIBSSH2_HOSTKEY_HASH_SHA1());
+            my $yes = $self->_ask_user("The authenticity of host '$remote_hostname' can't be established.\n" .
+                                       "key fingerprint is SHA1:$fp.\n" .
+                                       "Are you sure you want to continue connecting (yes/no)? ", 1);
+            if (lc $yes eq 'yes') {
+                return 1;
+            }
+        }
+        elsif ($policy eq 'tofu') {
+            return 1;
+        }
+    }
+    # else policy is 'strict' or the key doesn't match the one in known_hosts
+
     $self->_set_error(LIBSSH2_ERROR_KNOWN_HOSTS(), 'Unable to verify remote host key');
     ()
 }
@@ -673,23 +706,13 @@ sub _cb_kbdint_response_default {
     my ($self, $user, $name, $instr, @prompt) = @_;
     _load_term_readkey or return;
 
-    local $| = 1;
     my $prompt = "[user $user] ";
     $prompt .= "$name\n" if $name;
     $prompt .= "$instr\n" if $instr;
     $prompt =~ s/ $/\n/;
-    print $prompt;
+    $self->_print_stderr($prompt);
 
-    my @out;
-    for my $prompt(@prompt) {
-        print STDERR "$prompt->{text}";
-
-        Term::ReadKey::ReadMode('noecho') unless $prompt->{echo};
-        chomp(my $value = Term::ReadKey::ReadLine(0));
-        Term::ReadKey::ReadMode('normal') unless $prompt->{echo};
-        push @out, $value;
-    }
-    @out
+    return map $self->_ask_user($_->{text}, $_->{echo}), @prompt;
 }
 
 my $hostkey_warned;
@@ -1136,9 +1159,14 @@ Returns the public key of the remote host and its type which is one of
 C<LIBSSH2_HOSTKEY_TYPE_RSA>, C<LIBSSH2_HOSTKEY_TYPE_DSS>, or
 C<LIBSSH2_HOSTKEY_TYPE_UNKNOWN>.
 
-=head2 check_remote_hostkey( known_hosts_path, policy )
+=head2 check_remote_hostkey( [known_hosts_path, [policy]] )
 
 Looks for the remote host key in the given file.
+
+The path to the file containing the known host keys defaults to
+C<~/.ssh/known_hosts>.
+
+Currently, the C<policy> argument is ignored.
 
 =head2 auth_list ( [username] )
 

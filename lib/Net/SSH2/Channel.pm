@@ -100,7 +100,7 @@ __END__
 
 =head1 NAME
 
-Net::SSH2::Channel - SSH 2 channel object
+Net::SSH2::Channel - SSH2 channel object
 
 =head1 SYNOPSIS
 
@@ -200,7 +200,7 @@ Start a process on the channel.  See also L<shell>, L<exec>, L<subsystem>.
 Note that only one invocation of C<process> or any of the shortcuts
 C<shell>, C<exec> or C<subsystem> is allowed per channel. In order to
 run several commands, shells or/and subsystems, a new C<Channel>
-instance must be used for every command.
+instance must be used for every one.
 
 Alternatively, it is also possible to launch a remote shell (using
 L<shell>) and simulate the user interaction printing commands to its

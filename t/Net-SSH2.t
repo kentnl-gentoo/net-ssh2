@@ -1,19 +1,24 @@
+# -*- Mode: CPerl -*-
+
 # Before `make install' is performed this script should be runnable with
 # `make test'. After `make install' it should work as `perl Net-SSH2.t'
 # THIS LINE WILL BE READ BY A TEST BELOW
 
 #########################
 
-use Test::More tests => 72;
+use Test::More;
 
 use strict;
 use File::Basename;
-use Fcntl ':mode';
+use File::Spec;
 
 #########################
 
 # to speed up testing, set host, user and pass here
 my ($host, $user, $password, $passphrase) = qw();
+
+$| = 1;
+sub slurp;
 
 # (1) use module
 BEGIN { use_ok('Net::SSH2', ':all') };
@@ -48,48 +53,51 @@ is($ssh2->poll(0), 0, 'poll indefinite');
 is($ssh2->poll(2000), 0, 'poll 2 second');
 
 is($ssh2->sock, undef, '->sock is undef before connect');
+is($ssh2->remote_hostname, undef, '->remote_hostname is undef before connect');
 
 # (1) connect
-SKIP: { # SKIP-connect
-skip '- non-interactive session', 62 unless $host or -t STDOUT;
-$| = 1;
-unless ($host) {
-    print <<TEST;
-
+unless (defined $host) {
+    if (-t STDIN and -t STDOUT) {
+        chomp(my $prompt = <<EOP);
 To test the connection capabilities of Net::SSH2, we need a test site running
 a secure shell server daemon.  Enter 'localhost' or '127.0.0.1' to use this
 host over IPv4. Enter '::1' to use this host over IPv6.
 
-TEST
-    print "Hostname or IP address [ENTER to skip]: ";
-    chomp($host = <STDIN>);
-    print "\n";
+Hostname or IP address [ENTER to skip]: 
+EOP
+        $host = $ssh2->_ask_user($prompt, 1);
+    }
+    unless (defined $host and length $host) {
+        done_testing;
+        exit(0);
+    }
 }
-SKIP: { # SKIP-server
-skip '- no server daemon available', 62 unless $host;
-ok($ssh2->connect($host), "connect to $host");
 
+ok($ssh2->connect($host), "connect to $host");
 isa_ok($ssh2->sock, 'IO::Socket', '->sock isa IO::Socket');
+is($ssh2->remote_hostname, $host, '->remote_hostname');
 
 # (8) server methods
-for my $type(qw(kex hostkey crypt_cs crypt_sc mac_cs mac_sc comp_cs comp_sc)) {
+for my $type (qw(kex hostkey crypt_cs crypt_sc mac_cs mac_sc comp_cs comp_sc)) {
     my $method = $ssh2->method($type);
     ok($ssh2->method($type), "$type method: $method");
 }
 
-# (2) hostkey hash
+# (2) check host key
 my $md5 = $ssh2->hostkey_hash('md5');
 is(length $md5, 16, 'have MD5 hostkey hash');
 my $sha1 = $ssh2->hostkey_hash('sha1');
 is(length $sha1, 20, 'have SHA1 hostkey hash');
 
+ok($ssh2->check_remote_hostkey(File::Spec->devnull, 'ask'), "check remote key")
+    or diag(join " ", "Error:", $ssh2->error);
+
 # (3) authentication methods
 unless ($user) {
     my $def_user;
     $def_user = getpwuid $< if $^O !~ /mswin/i;
-    print $def_user ? "\nEnter username [$def_user]: " : "\nEnter username: ";
-    chomp($user = <STDIN>);
-    $user ||= $def_user;
+    $user = $ssh2->_ask_user("Enter username" . ($def_user ? " [$def_user]: " : ": "));
+    $user = $def_user unless defined $user and length $user;
 }
 my $auth = $ssh2->auth_list($user);
 ok($auth, "authenticate: $auth");
@@ -99,32 +107,35 @@ ok(!$ssh2->auth_ok, 'not authenticated yet');
 
 # (2) authenticate
 my $type;
-if (defined $ENV{HOME}) {
+my $home = $ENV{HOME} || (getpwuid($<))[7];
+if (defined $home) {
     for my $key (qw(dsa rsa)) {
-        if ($ssh2->auth_publickey($user,
-                                  "$ENV{HOME}/.ssh/id_$key.pub",
-                                  "$ENV{HOME}/.ssh/id_$key",
+        my $path = "$home/.ssh/id_$key";
+        if ($ssh2->auth_publickey($user, "$path.pub", $path,
                                   $passphrase)) {
+            diag "authenticated with key at $path";
             $type = 'pubkey';
             last;
+        }
+        else {
+            diag "failed to authenticate with key at $path";
         }
     }
 }
 
 unless ($type) {
+    diag "reverting to password authentication";
     $type = $ssh2->auth(username => $user,
                         password => $password,
                         interact => 1);
 }
 
-ok($type, "authenticated");
-SKIP: { # SKIP-auth
-skip '- failed to authenticate with server', 37 unless $ssh2->auth_ok;
-pass('authenticated successfully');
+ok($ssh2->auth_ok, 'authenticated successfully');
+ok($type, "authentication type is defined");
 
 # (5) channels
 my $chan = $ssh2->channel();
-isa_ok($chan, 'Net::SSH2::Channel', 'new channel');
+isa_ok($chan, 'Net::SSH2::Channel');
 $chan->blocking(0); pass('set blocking');
 ok(!$chan->eof(), 'not at EOF');
 ok($chan->ext_data('normal'), 'normal extended data handling');
@@ -134,7 +145,7 @@ ok($chan->ext_data('merge'), 'merge extended data');
 is($chan->setenv(), 1, 'empty setenv');
 my %env = (test1 => 'A', test2 => 'something', test3 => 'E L S E', LANG => 'C');
 # most sshds disallow set, so we're happy if these don't crash
-ok($chan->setenv(%env) || 1, 'set environment variables');
+ok($chan->setenv(%env) || 1, 'set environment variables, it is ok if it fails');
 is($chan->session, $ssh2, 'verify session');
 
 # (1) callback
@@ -144,7 +155,7 @@ ok($ssh2->callback(disconnect => sub { warn "SSH_MSG_DISCONNECT!\n"; }),
 # (2) SFTP
 $ssh2->blocking(1);  # creating channel may block
 my $sftp = $ssh2->sftp();
-isa_ok($sftp, 'Net::SSH2::SFTP', 'SFTP session');
+isa_ok($sftp, 'Net::SSH2::SFTP');
 is($sftp->session, $ssh2, 'verify session');
 
 # (4) directories
@@ -152,7 +163,7 @@ my $dir = "net_ssh2_$$";
 ok($sftp->mkdir($dir), "create directory $dir");
 my %stat = $sftp->stat($dir);
 ok(scalar keys %stat, 'stat directory');
-ok(S_ISDIR($stat{mode}), 'type is directory');
+ok($stat{mode} & 0x4000, 'type is directory');
 is($stat{name}, $dir, 'directory name matches');
 
 # (4) SCP
@@ -165,14 +176,9 @@ SKIP: { # SKIP-scalar
     my $check = IO::Scalar->new;
     ok($ssh2->scp_get($remote, $check), "get $remote from remote");
  SKIP: { # SKIP-slurp
-        eval { require File::Slurp };
-        skip '- File::Slurp required', 1 if $@;
-        if($^O =~ /MSWin32/i) {
-            is(${$check->sref}, File::Slurp::read_file($0, binmode => ':raw'), 'files match');
-        }
-        else {
-            is(${$check->sref}, File::Slurp::read_file($0), 'files match');
-        }
+        my $data = slurp($0);
+        defined $data or skip "- Unable to read '$0': $!", 1;
+        is(${$check->sref}, $data, 'files match');
     } # SKIP-slurp
 } # SKIP-scalar
 
@@ -214,7 +220,7 @@ undef $dh;
 # (2) read file
 $fh = $sftp->open($altname);
 isa_ok($fh, 'Net::SSH2::File', 'opened file');
-scalar <$fh> for 1..2;
+scalar <$fh> for 1..4;
 my $line = <$fh>;
 chomp $line;
 if($^O =~ /MSWin32/i) {
@@ -245,13 +251,14 @@ ok(!$line, 'no more lines');
 $ssh2->blocking(1);  # creating channel may block
 my $pk = $ssh2->public_key;
 SKIP: {
-skip ' - public key infrastructure not present', 4 unless $pk;
-isa_ok($pk, 'Net::SSH2::PublicKey', 'public key session');
-my @keys = $pk->fetch();
-pass('got '.(scalar @keys).' keys in array');
-my $keys = $pk->fetch();
-pass("got $keys keys available");
-is(scalar @keys, $keys, 'public key counts match');
+    skip ' - public key infrastructure not present', 4 unless $pk;
+    diag "What? you have the public key module working!!!";
+    isa_ok($pk, 'Net::SSH2::PublicKey', 'public key session');
+    my @keys = $pk->fetch();
+    pass('got '.(scalar @keys).' keys in array');
+    my $keys = $pk->fetch();
+    pass("got $keys keys available");
+    is(scalar @keys, $keys, 'public key counts match');
 }
 undef $pk;
 
@@ -259,8 +266,19 @@ undef $pk;
 ok($chan->close(), 'close channel'); # optional step
 undef $fh;
 ok($ssh2->disconnect('leaving'), 'sent disconnect message');
-} # SKIP-auth
-} # SKIP-server
-} # SKIP-connect
+
+done_testing;
+exit(0);
+
+sub slurp {
+    my $file = shift;
+    if (open my $fh, '<', $file) {
+        binmode $fh;
+        local $/;
+        my $data = <$fh>;
+        return $data if close $fh;
+    }
+    ()
+}
 
 # vim:filetype=perl
