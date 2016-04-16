@@ -992,13 +992,13 @@ constant_25 (pTHX_ const char *name, IV *iv_return) {
      LIBSSH2_CALLBACK_MACERROR LIBSSH2_CHANNEL_FLUSH_ALL
      LIBSSH2_CHANNEL_MINADJUST LIBSSH2_ERROR_BANNER_NONE
      LIBSSH2_ERROR_BANNER_SEND LIBSSH2_ERROR_INVALID_MAC
-     LIBSSH2_ERROR_KEX_FAILURE LIBSSH2_ERROR_METHOD_NONE
-     LIBSSH2_ERROR_SOCKET_NONE LIBSSH2_ERROR_SOCKET_SEND
-     LIBSSH2_FX_INVALID_HANDLE LIBSSH2_FX_OP_UNSUPPORTED
-     LIBSSH2_FX_QUOTA_EXCEEDED LIBSSH2_HOSTKEY_HASH_SHA1
-     LIBSSH2_PACKET_MAXPAYLOAD LIBSSH2_SFTP_TYPE_REGULAR
-     LIBSSH2_SFTP_TYPE_SPECIAL LIBSSH2_SFTP_TYPE_SYMLINK
-     LIBSSH2_SFTP_TYPE_UNKNOWN */
+     LIBSSH2_ERROR_KEX_FAILURE LIBSSH2_ERROR_KNOWN_HOSTS
+     LIBSSH2_ERROR_METHOD_NONE LIBSSH2_ERROR_SOCKET_NONE
+     LIBSSH2_ERROR_SOCKET_SEND LIBSSH2_FX_INVALID_HANDLE
+     LIBSSH2_FX_OP_UNSUPPORTED LIBSSH2_FX_QUOTA_EXCEEDED
+     LIBSSH2_HOSTKEY_HASH_SHA1 LIBSSH2_PACKET_MAXPAYLOAD
+     LIBSSH2_SFTP_TYPE_REGULAR LIBSSH2_SFTP_TYPE_SPECIAL
+     LIBSSH2_SFTP_TYPE_SYMLINK LIBSSH2_SFTP_TYPE_UNKNOWN */
   /* Offset 16 gives the best switch position.  */
   switch (name[16]) {
   case 'A':
@@ -1134,6 +1134,17 @@ constant_25 (pTHX_ const char *name, IV *iv_return) {
 #endif
     }
     break;
+  case 'O':
+    if (memEQ(name, "LIBSSH2_ERROR_KNOWN_HOSTS", 25)) {
+    /*                               ^               */
+#ifdef LIBSSH2_ERROR_KNOWN_HOSTS
+      *iv_return = LIBSSH2_ERROR_KNOWN_HOSTS;
+      return PERL_constant_ISIV;
+#else
+      return PERL_constant_NOTDEF;
+#endif
+    }
+    break;
   case 'S':
     if (memEQ(name, "LIBSSH2_FX_OP_UNSUPPORTED", 25)) {
     /*                               ^               */
@@ -1208,10 +1219,11 @@ constant_26 (pTHX_ const char *name, IV *iv_return) {
      here.  However, subsequent manual editing may have added or removed some.
      LIBSSH2_ERROR_HOSTKEY_INIT LIBSSH2_ERROR_HOSTKEY_SIGN
      LIBSSH2_ERROR_SCP_PROTOCOL LIBSSH2_FX_CONNECTION_LOST
-     LIBSSH2_FX_NOT_A_DIRECTORY LIBSSH2_KNOWNHOST_KEY_MASK
-     LIBSSH2_KNOWNHOST_KEY_RSA1 LIBSSH2_SFTP_ATTR_EXTENDED
-     LIBSSH2_SFTP_PACKET_MAXLEN LIBSSH2_SFTP_RENAME_ATOMIC
-     LIBSSH2_SFTP_RENAME_NATIVE LIBSSH2_SOCKET_POLL_UDELAY */
+     LIBSSH2_FX_NOT_A_DIRECTORY LIBSSH2_HOSTKEY_POLICY_ASK
+     LIBSSH2_KNOWNHOST_KEY_MASK LIBSSH2_KNOWNHOST_KEY_RSA1
+     LIBSSH2_SFTP_ATTR_EXTENDED LIBSSH2_SFTP_PACKET_MAXLEN
+     LIBSSH2_SFTP_RENAME_ATOMIC LIBSSH2_SFTP_RENAME_NATIVE
+     LIBSSH2_SOCKET_POLL_UDELAY */
   /* Offset 22 gives the best switch position.  */
   switch (name[22]) {
   case 'E':
@@ -1342,6 +1354,17 @@ constant_26 (pTHX_ const char *name, IV *iv_return) {
 #endif
     }
     break;
+  case '_':
+    if (memEQ(name, "LIBSSH2_HOSTKEY_POLICY_ASK", 26)) {
+    /*                                     ^          */
+#ifdef LIBSSH2_HOSTKEY_POLICY_ASK
+      *iv_return = LIBSSH2_HOSTKEY_POLICY_ASK;
+      return PERL_constant_ISIV;
+#else
+      return PERL_constant_NOTDEF;
+#endif
+    }
+    break;
   }
   return PERL_constant_NOTFOUND;
 }
@@ -1351,9 +1374,10 @@ constant_27 (pTHX_ const char *name, IV *iv_return) {
   /* When generated this function returned values for the list of names given
      here.  However, subsequent manual editing may have added or removed some.
      LIBSSH2_CALLBACK_DISCONNECT LIBSSH2_ERROR_SFTP_PROTOCOL
-     LIBSSH2_FX_INVALID_FILENAME LIBSSH2_KNOWNHOST_KEY_SHIFT
-     LIBSSH2_KNOWNHOST_TYPE_MASK LIBSSH2_KNOWNHOST_TYPE_SHA1
-     LIBSSH2_SFTP_ATTR_ACMODTIME LIBSSH2_SFTP_TYPE_DIRECTORY */
+     LIBSSH2_FX_INVALID_FILENAME LIBSSH2_HOSTKEY_POLICY_TOFU
+     LIBSSH2_KNOWNHOST_KEY_SHIFT LIBSSH2_KNOWNHOST_TYPE_MASK
+     LIBSSH2_KNOWNHOST_TYPE_SHA1 LIBSSH2_SFTP_ATTR_ACMODTIME
+     LIBSSH2_SFTP_TYPE_DIRECTORY */
   /* Offset 25 gives the best switch position.  */
   switch (name[25]) {
   case 'A':
@@ -1379,6 +1403,15 @@ constant_27 (pTHX_ const char *name, IV *iv_return) {
     }
     break;
   case 'F':
+    if (memEQ(name, "LIBSSH2_HOSTKEY_POLICY_TOFU", 27)) {
+    /*                                        ^        */
+#ifdef LIBSSH2_HOSTKEY_POLICY_TOFU
+      *iv_return = LIBSSH2_HOSTKEY_POLICY_TOFU;
+      return PERL_constant_ISIV;
+#else
+      return PERL_constant_NOTDEF;
+#endif
+    }
     if (memEQ(name, "LIBSSH2_KNOWNHOST_KEY_SHIFT", 27)) {
     /*                                        ^        */
 #ifdef LIBSSH2_KNOWNHOST_KEY_SHIFT
@@ -1582,11 +1615,11 @@ constant_29 (pTHX_ const char *name, IV *iv_return) {
   /* When generated this function returned values for the list of names given
      here.  However, subsequent manual editing may have added or removed some.
      LIBSSH2_ERROR_CHANNEL_FAILURE LIBSSH2_ERROR_CHANNEL_UNKNOWN
-     LIBSSH2_KNOWNHOST_CHECK_MATCH LIBSSH2_KNOWNHOST_KEYENC_MASK
-     LIBSSH2_KNOWNHOST_TYPE_CUSTOM LIBSSH2_POLLFD_CHANNEL_CLOSED
-     LIBSSH2_POLLFD_SESSION_CLOSED LIBSSH2_SFTP_ATTR_PERMISSIONS
-     LIBSSH2_SFTP_RENAME_OVERWRITE LIBSSH2_SFTP_TYPE_CHAR_DEVICE
-     LIBSSH2_SOCKET_BLOCK_OUTBOUND */
+     LIBSSH2_HOSTKEY_POLICY_STRICT LIBSSH2_KNOWNHOST_CHECK_MATCH
+     LIBSSH2_KNOWNHOST_KEYENC_MASK LIBSSH2_KNOWNHOST_TYPE_CUSTOM
+     LIBSSH2_POLLFD_CHANNEL_CLOSED LIBSSH2_POLLFD_SESSION_CLOSED
+     LIBSSH2_SFTP_ATTR_PERMISSIONS LIBSSH2_SFTP_RENAME_OVERWRITE
+     LIBSSH2_SFTP_TYPE_CHAR_DEVICE LIBSSH2_SOCKET_BLOCK_OUTBOUND */
   /* Offset 24 gives the best switch position.  */
   switch (name[24]) {
   case 'B':
@@ -1669,6 +1702,17 @@ constant_29 (pTHX_ const char *name, IV *iv_return) {
     /*                                       ^           */
 #ifdef LIBSSH2_SFTP_ATTR_PERMISSIONS
       *iv_return = LIBSSH2_SFTP_ATTR_PERMISSIONS;
+      return PERL_constant_ISIV;
+#else
+      return PERL_constant_NOTDEF;
+#endif
+    }
+    break;
+  case 'T':
+    if (memEQ(name, "LIBSSH2_HOSTKEY_POLICY_STRICT", 29)) {
+    /*                                       ^           */
+#ifdef LIBSSH2_HOSTKEY_POLICY_STRICT
+      *iv_return = LIBSSH2_HOSTKEY_POLICY_STRICT;
       return PERL_constant_ISIV;
 #else
       return PERL_constant_NOTDEF;
@@ -1806,23 +1850,13 @@ constant_31 (pTHX_ const char *name, IV *iv_return) {
   /* When generated this function returned values for the list of names given
      here.  However, subsequent manual editing may have added or removed some.
      LIBSSH2_ERROR_INVALID_POLL_TYPE LIBSSH2_ERROR_SOCKET_DISCONNECT
-     LIBSSH2_KNOWNHOST_CHECK_FAILURE LIBSSH2_KNOWNHOST_KEYENC_BASE64 */
-  /* Offset 22 gives the best switch position.  */
-  switch (name[22]) {
-  case 'I':
-    if (memEQ(name, "LIBSSH2_ERROR_SOCKET_DISCONNECT", 31)) {
-    /*                                     ^               */
-#ifdef LIBSSH2_ERROR_SOCKET_DISCONNECT
-      *iv_return = LIBSSH2_ERROR_SOCKET_DISCONNECT;
-      return PERL_constant_ISIV;
-#else
-      return PERL_constant_NOTDEF;
-#endif
-    }
-    break;
-  case 'K':
+     LIBSSH2_HOSTKEY_POLICY_ADVISORY LIBSSH2_KNOWNHOST_CHECK_FAILURE
+     LIBSSH2_KNOWNHOST_KEYENC_BASE64 */
+  /* Offset 25 gives the best switch position.  */
+  switch (name[25]) {
+  case 'A':
     if (memEQ(name, "LIBSSH2_KNOWNHOST_CHECK_FAILURE", 31)) {
-    /*                                     ^               */
+    /*                                        ^            */
 #ifdef LIBSSH2_KNOWNHOST_CHECK_FAILURE
       *iv_return = LIBSSH2_KNOWNHOST_CHECK_FAILURE;
       return PERL_constant_ISIV;
@@ -1831,9 +1865,9 @@ constant_31 (pTHX_ const char *name, IV *iv_return) {
 #endif
     }
     break;
-  case 'N':
+  case 'B':
     if (memEQ(name, "LIBSSH2_KNOWNHOST_KEYENC_BASE64", 31)) {
-    /*                                     ^               */
+    /*                                        ^            */
 #ifdef LIBSSH2_KNOWNHOST_KEYENC_BASE64
       *iv_return = LIBSSH2_KNOWNHOST_KEYENC_BASE64;
       return PERL_constant_ISIV;
@@ -1842,11 +1876,33 @@ constant_31 (pTHX_ const char *name, IV *iv_return) {
 #endif
     }
     break;
-  case 'P':
+  case 'L':
     if (memEQ(name, "LIBSSH2_ERROR_INVALID_POLL_TYPE", 31)) {
-    /*                                     ^               */
+    /*                                        ^            */
 #ifdef LIBSSH2_ERROR_INVALID_POLL_TYPE
       *iv_return = LIBSSH2_ERROR_INVALID_POLL_TYPE;
+      return PERL_constant_ISIV;
+#else
+      return PERL_constant_NOTDEF;
+#endif
+    }
+    break;
+  case 'O':
+    if (memEQ(name, "LIBSSH2_ERROR_SOCKET_DISCONNECT", 31)) {
+    /*                                        ^            */
+#ifdef LIBSSH2_ERROR_SOCKET_DISCONNECT
+      *iv_return = LIBSSH2_ERROR_SOCKET_DISCONNECT;
+      return PERL_constant_ISIV;
+#else
+      return PERL_constant_NOTDEF;
+#endif
+    }
+    break;
+  case 'V':
+    if (memEQ(name, "LIBSSH2_HOSTKEY_POLICY_ADVISORY", 31)) {
+    /*                                        ^            */
+#ifdef LIBSSH2_HOSTKEY_POLICY_ADVISORY
+      *iv_return = LIBSSH2_HOSTKEY_POLICY_ADVISORY;
       return PERL_constant_ISIV;
 #else
       return PERL_constant_NOTDEF;
@@ -1959,6 +2015,51 @@ constant_34 (pTHX_ const char *name, IV *iv_return) {
 }
 
 static int
+constant_35 (pTHX_ const char *name, IV *iv_return) {
+  /* When generated this function returned values for the list of names given
+     here.  However, subsequent manual editing may have added or removed some.
+     LIBSSH2_CHANNEL_EXTENDED_DATA_MERGE LIBSSH2_CHANNEL_FLUSH_EXTENDED_DATA
+     LIBSSH2_ERROR_AUTHENTICATION_FAILED */
+  /* Offset 34 gives the best switch position.  */
+  switch (name[34]) {
+  case 'A':
+    if (memEQ(name, "LIBSSH2_CHANNEL_FLUSH_EXTENDED_DAT", 34)) {
+    /*                                                 A      */
+#ifdef LIBSSH2_CHANNEL_FLUSH_EXTENDED_DATA
+      *iv_return = LIBSSH2_CHANNEL_FLUSH_EXTENDED_DATA;
+      return PERL_constant_ISIV;
+#else
+      return PERL_constant_NOTDEF;
+#endif
+    }
+    break;
+  case 'D':
+    if (memEQ(name, "LIBSSH2_ERROR_AUTHENTICATION_FAILE", 34)) {
+    /*                                                 D      */
+#ifdef LIBSSH2_ERROR_AUTHENTICATION_FAILED
+      *iv_return = LIBSSH2_ERROR_AUTHENTICATION_FAILED;
+      return PERL_constant_ISIV;
+#else
+      return PERL_constant_NOTDEF;
+#endif
+    }
+    break;
+  case 'E':
+    if (memEQ(name, "LIBSSH2_CHANNEL_EXTENDED_DATA_MERG", 34)) {
+    /*                                                 E      */
+#ifdef LIBSSH2_CHANNEL_EXTENDED_DATA_MERGE
+      *iv_return = LIBSSH2_CHANNEL_EXTENDED_DATA_MERGE;
+      return PERL_constant_ISIV;
+#else
+      return PERL_constant_NOTDEF;
+#endif
+    }
+    break;
+  }
+  return PERL_constant_NOTFOUND;
+}
+
+static int
 constant_36 (pTHX_ const char *name, IV *iv_return) {
   /* When generated this function returned values for the list of names given
      here.  However, subsequent manual editing may have added or removed some.
@@ -2041,9 +2142,10 @@ my @names = (qw(LIBSSH2_CALLBACK_DEBUG LIBSSH2_CALLBACK_DISCONNECT
 	       LIBSSH2_CHANNEL_PACKET_DEFAULT LIBSSH2_CHANNEL_WINDOW_DEFAULT
 	       LIBSSH2_DH_GEX_MAXGROUP LIBSSH2_DH_GEX_MINGROUP
 	       LIBSSH2_DH_GEX_OPTGROUP LIBSSH2_ERROR_ALLOC
-	       LIBSSH2_ERROR_BANNER_NONE LIBSSH2_ERROR_BANNER_SEND
-	       LIBSSH2_ERROR_CHANNEL_CLOSED LIBSSH2_ERROR_CHANNEL_EOF_SENT
-	       LIBSSH2_ERROR_CHANNEL_FAILURE LIBSSH2_ERROR_CHANNEL_OUTOFORDER
+	       LIBSSH2_ERROR_AUTHENTICATION_FAILED LIBSSH2_ERROR_BANNER_NONE
+	       LIBSSH2_ERROR_BANNER_SEND LIBSSH2_ERROR_CHANNEL_CLOSED
+	       LIBSSH2_ERROR_CHANNEL_EOF_SENT LIBSSH2_ERROR_CHANNEL_FAILURE
+	       LIBSSH2_ERROR_CHANNEL_OUTOFORDER
 	       LIBSSH2_ERROR_CHANNEL_PACKET_EXCEEDED
 	       LIBSSH2_ERROR_CHANNEL_REQUEST_DENIED
 	       LIBSSH2_ERROR_CHANNEL_UNKNOWN
@@ -2052,8 +2154,8 @@ my @names = (qw(LIBSSH2_CALLBACK_DEBUG LIBSSH2_CALLBACK_DISCONNECT
 	       LIBSSH2_ERROR_HOSTKEY_INIT LIBSSH2_ERROR_HOSTKEY_SIGN
 	       LIBSSH2_ERROR_INVAL LIBSSH2_ERROR_INVALID_MAC
 	       LIBSSH2_ERROR_INVALID_POLL_TYPE LIBSSH2_ERROR_KEX_FAILURE
-	       LIBSSH2_ERROR_KEY_EXCHANGE_FAILURE LIBSSH2_ERROR_METHOD_NONE
-	       LIBSSH2_ERROR_METHOD_NOT_SUPPORTED
+	       LIBSSH2_ERROR_KEY_EXCHANGE_FAILURE LIBSSH2_ERROR_KNOWN_HOSTS
+	       LIBSSH2_ERROR_METHOD_NONE LIBSSH2_ERROR_METHOD_NOT_SUPPORTED
 	       LIBSSH2_ERROR_PASSWORD_EXPIRED LIBSSH2_ERROR_PROTO
 	       LIBSSH2_ERROR_PUBLICKEY_PROTOCOL
 	       LIBSSH2_ERROR_PUBLICKEY_UNRECOGNIZED
@@ -2075,7 +2177,9 @@ my @names = (qw(LIBSSH2_CALLBACK_DEBUG LIBSSH2_CALLBACK_DISCONNECT
 	       LIBSSH2_FX_OP_UNSUPPORTED LIBSSH2_FX_PERMISSION_DENIED
 	       LIBSSH2_FX_QUOTA_EXCEEDED LIBSSH2_FX_UNKNOWN_PRINCIPLE
 	       LIBSSH2_FX_WRITE_PROTECT LIBSSH2_H LIBSSH2_HOSTKEY_HASH_MD5
-	       LIBSSH2_HOSTKEY_HASH_SHA1 LIBSSH2_KNOWNHOST_CHECK_FAILURE
+	       LIBSSH2_HOSTKEY_HASH_SHA1 LIBSSH2_HOSTKEY_POLICY_ADVISORY
+	       LIBSSH2_HOSTKEY_POLICY_ASK LIBSSH2_HOSTKEY_POLICY_STRICT
+	       LIBSSH2_HOSTKEY_POLICY_TOFU LIBSSH2_KNOWNHOST_CHECK_FAILURE
 	       LIBSSH2_KNOWNHOST_CHECK_MATCH LIBSSH2_KNOWNHOST_CHECK_MISMATCH
 	       LIBSSH2_KNOWNHOST_CHECK_NOTFOUND LIBSSH2_KNOWNHOST_KEYENC_BASE64
 	       LIBSSH2_KNOWNHOST_KEYENC_MASK LIBSSH2_KNOWNHOST_KEYENC_RAW
@@ -2248,34 +2352,7 @@ __END__
     return constant_34 (aTHX_ name, iv_return);
     break;
   case 35:
-    /* Names all of length 35.  */
-    /* LIBSSH2_CHANNEL_EXTENDED_DATA_MERGE LIBSSH2_CHANNEL_FLUSH_EXTENDED_DATA
-       */
-    /* Offset 16 gives the best switch position.  */
-    switch (name[16]) {
-    case 'E':
-      if (memEQ(name, "LIBSSH2_CHANNEL_EXTENDED_DATA_MERGE", 35)) {
-      /*                               ^                         */
-#ifdef LIBSSH2_CHANNEL_EXTENDED_DATA_MERGE
-        *iv_return = LIBSSH2_CHANNEL_EXTENDED_DATA_MERGE;
-        return PERL_constant_ISIV;
-#else
-        return PERL_constant_NOTDEF;
-#endif
-      }
-      break;
-    case 'F':
-      if (memEQ(name, "LIBSSH2_CHANNEL_FLUSH_EXTENDED_DATA", 35)) {
-      /*                               ^                         */
-#ifdef LIBSSH2_CHANNEL_FLUSH_EXTENDED_DATA
-        *iv_return = LIBSSH2_CHANNEL_FLUSH_EXTENDED_DATA;
-        return PERL_constant_ISIV;
-#else
-        return PERL_constant_NOTDEF;
-#endif
-      }
-      break;
-    }
+    return constant_35 (aTHX_ name, iv_return);
     break;
   case 36:
     return constant_36 (aTHX_ name, iv_return);
