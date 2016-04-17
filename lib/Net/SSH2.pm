@@ -1,6 +1,6 @@
 package Net::SSH2;
 
-our $VERSION = '0.59_06';
+our $VERSION = '0.59_07';
 
 use 5.006;
 use strict;
@@ -202,7 +202,13 @@ my $password_when_you_mean_passphrase_warned;
 sub auth {
     my ($self, %p) = @_;
 
+    $self->_set_error(LIBSSH2_ERROR_AUTHENTICATION_FAILED(),
+                      "Authentication failed"); # default error
+
     my @rank = $self->_auth_rank(delete $p{rank});
+    my $remote_rank;
+    $remote_rank = { map { $_ => 1 } $self->auth_list($p{username}) }
+        if defined $p{username};
 
     # if fallback is set, interact with the user even when a password
     # is given
@@ -211,7 +217,11 @@ sub auth {
     TYPE: for(my $i = 0; $i < @rank; $i++) {
         my $type = $rank[$i];
         my $data = $self->_auth_methods->{$type};
-        confess "unknown authentication method '$type'" unless $data;
+        unless ($data) {
+            carp "unknown authentication method '$type'";
+            next;
+        }
+        next if $remote_rank and !$remote_rank->{$data->{ssh}};
 
         # do we have the required parameters?
         my @pass;
@@ -238,6 +248,8 @@ sub auth {
         # invoke the authentication method
         return $type if $data->{method}->($self, @pass) and $self->auth_ok;
     }
+
+    return 'none' if  $self->auth_ok;
     return;  # failure
 }
 
@@ -286,6 +298,13 @@ sub auth_password_interact {
     return $rc;
 }
 
+sub _local_home {
+    return $ENV{HOME} if defined $ENV{HOME};
+    local ($@, $SIG{__DIE__}, $SIG{__WARN__});
+    my $home = eval { (getpwuid($<))[7] };
+    return $home;
+}
+
 sub check_hostkey {
     my ($self, $policy, $path, $comment) = @_;
     my $cb;
@@ -305,7 +324,7 @@ sub check_hostkey {
         unless defined $hostname;
 
     unless (defined $path) {
-        my $home = $ENV{HOME} || (getpwuid($<))[7];
+        my $home = _local_home;
         unless (defined $home) {
             $self->_set_error(LIBSSH2_ERROR_FILE(), "Unable to determine known_hosts location");
             return;
@@ -619,10 +638,10 @@ Net::SSH2 - Support for the SSH 2 protocol via libssh2.
 
 =head1 DESCRIPTION
 
-C<Net::SSH2> is a perl interface to the C<libssh2>
+Net::SSH2 is a perl interface to the libssh2
 (L<http://www.libssh2.org>) library.  It supports the SSH2 protocol
 (there is no support for SSH1) with all of the key exchanges, ciphers,
-and compression of C<libssh2>.
+and compression of libssh2.
 
 Even if the module can be compiled and linked against very old
 versions of the library, nothing below 1.5.0 should really be used
@@ -635,7 +654,7 @@ Unless otherwise indicated, methods return a true value on success and
 C<undef> on failure; use the L</error> method to get extended error
 information.
 
-B<Important>: methods in C<Net::SSH2> not backed by libssh2 functions
+B<Important>: methods in Net::SSH2 not backed by libssh2 functions
 (i.e. L</check_hostkey> or L<SCP|/scp_get> related methods) require
 libssh2 1.7.0 or later in order to set the error state. That means
 that after any of those methods fails, L</error> would not return the
@@ -676,15 +695,15 @@ communication channels over the SSH connection.
 
 =item 7
 
-Close the connection letting the C<Net::SSH2> object go out of scope or
+Close the connection letting the Net::SSH2 object go out of scope or
 calling L</disconnect> explicitly.
 
 =back
 
 =head1 CONSTANTS
 
-All the constants defined in L<libssh2> can be imported from
-C<Net::SSH2>.
+All the constants defined in libssh2 can be imported from
+Net::SSH2.
 
 For instance:
 
@@ -692,14 +711,14 @@ For instance:
                     LIBSSH2_CHANNEL_FLUSH_ALL
                     LIBSSH2_HOSTKEY_POLICY_ASK);
 
-Though note that most methods also accept the uncommon part of the
+Though note that most methods accept the uncommon part of the
 constant name as a string. For instance the following two method calls
 are equivalent:
 
     $channel->ext_data(LIBSSH2_CHANNEL_EXTENDED_DATA_MERGE);
     $channel->ext_data('merge');
 
-Tags can also be used to import the following constant subsets:
+Tags can be used to import the following constant subsets:
 
 =over 4
 
@@ -757,9 +776,9 @@ SFTP constants:
 
 =head2 new
 
-Create new SSH2 object.
+Create new Net::SSH2 object representing a SSH session.
 
-To turn on tracing with a debug build of C<libssh2> use:
+To turn on tracing with a debug build of libssh2 use:
 
     my $ssh2 = Net::SSH2->new(trace => -1);
 
@@ -988,7 +1007,7 @@ The arguments combinations accepted are as follows:
 =item a glob or C<IO::*> object reference
 
 Note that tied file handles are not acceptable. The underlying
-C<libssh2> requires real file handles.
+libssh2 requires real file handles.
 
 =item host [, port]
 
@@ -1120,14 +1139,14 @@ L<Term::ReadKey>).
 
 Authenticate using the given private key and an optional passphrase.
 
-When L<libssh2> is compiled using OpenSSL as the crypto backend,
-passing this method C<undef> as the public key argument is acceptable
-(OpenSSL is able to extract the public key from the private one).
+When libssh2 is compiled using OpenSSL as the crypto backend, passing
+this method C<undef> as the public key argument is acceptable (OpenSSL
+is able to extract the public key from the private one).
 
 =head2 auth_publickey_frommemory ( username, publickey_blob, privatekey_blob [, passphrase ] )
 
 Authenticate using the given public/private key and an optional
-passphrase. The keys must be PEM encoded (requires C<libssh2> 1.6.0 or
+passphrase. The keys must be PEM encoded (requires libssh2 1.6.0 or
 later with the OpenSSL backend).
 
 =head2 auth_hostbased ( username, publickey, privatekey, hostname,
@@ -1310,7 +1329,7 @@ an IO object instead of a filename (but it must have a valid stat method).
 
 Return SecureFTP interface object (see L<Net::SSH2::SFTP>).
 
-Note that SFTP support in C<libssh2> is pretty rudimentary. You should
+Note that SFTP support in libssh2 is pretty rudimentary. You should
 consider using L<Net::SFTP::Foreign> with the L<Net::SSH2> backend
 L<Net::SFTP::Foreign::Backend::Net_SSH2> instead.
 
@@ -1324,9 +1343,9 @@ Returns known hosts interface object (see L<Net::SSH2::KnownHosts>).
 
 =head2 poll ( timeout, arrayref of hashes )
 
-B<Deprecated>: the poll functionality in C<libssh2> is deprecated and
+B<Deprecated>: the poll functionality in libssh2 is deprecated and
 its usage disregarded. Session methods L</sock> and
-L</block_directions> can be used instead to integrate C<Net::SSH2>
+L</block_directions> can be used instead to integrate Net::SSH2
 inside an external event loop.
 
 Pass in a timeout in milliseconds and an arrayref of hashes with the following

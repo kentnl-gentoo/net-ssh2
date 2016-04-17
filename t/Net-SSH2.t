@@ -105,9 +105,8 @@ ok($ssh2->check_hostkey('ask', $known_hosts), "check remote key - ask")
 
 # (3) authentication methods
 unless ($user) {
-    my $def_user;
-    $def_user = getpwuid $< if $^O !~ /mswin/i;
-    $user = $ssh2->_ask_user("Enter username" . ($def_user ? " [$def_user]: " : ": "));
+    my $def_user = eval { getpwuid $< };
+    $user = $ssh2->_ask_user("Enter username" . ($def_user ? " [$def_user]: " : ": "), 1);
     $user = $def_user unless defined $user and length $user;
 }
 my $auth = $ssh2->auth_list($user);
@@ -118,7 +117,7 @@ ok(!$ssh2->auth_ok, 'not authenticated yet');
 
 # (2) authenticate
 my $type;
-my $home = $ENV{HOME} || (getpwuid($<))[7];
+my $home = $ssh2->_local_home;
 if (defined $home) {
     for my $key (qw(dsa rsa)) {
         my $path = "$home/.ssh/id_$key";
@@ -179,17 +178,30 @@ is($stat{name}, $dir, 'directory name matches');
 
 # (4) SCP
 my $remote = "$dir/".basename($0);
-ok($ssh2->scp_put($0, $remote), "put $0 to remote");
+ok($ssh2->scp_put($0, $remote), "put $0 to remote ($remote)");
 
 SKIP: { # SKIP-scalar
     eval { require IO::Scalar };
     skip '- IO::Scalar required', 2 if $@;
     my $check = IO::Scalar->new;
     ok($ssh2->scp_get($remote, $check), "get $remote from remote");
+    my $content = ${$check->sref};
  SKIP: { # SKIP-slurp
         my $data = slurp($0);
         defined $data or skip "- Unable to read '$0': $!", 1;
-        is(${$check->sref}, $data, 'files match');
+        if (length $content == length $data) {
+            is($content, $data, 'files match');
+        }
+        else {
+            fail('file size match');
+            if (length $content == 0) {
+                diag <<MSG
+This is a known bug of Straberry perl: there is a mismatch between perl and libssh2 about the layout of 'struct stat'.
+The best way to avoid it is to upgrade libssh2 to version 1.6.1 or later.
+This bug affects SCP methods only.
+MSG
+            }
+        }
     } # SKIP-slurp
 } # SKIP-scalar
 
