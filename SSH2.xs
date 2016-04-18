@@ -157,7 +157,8 @@ static const char *const sftp_error[] = {
 
 typedef int SSH2_RC; /* for converting true/false to 1/undef */
 typedef int SSH2_BYTES; /* for functions returning a byte count or a negative number to signal an error */
-typedef libssh2_uint64_t SSH2_BYTES64; /* the same for 64bit numbers */
+typedef libssh2_int64_t SSH2_BYTES64; /* the same for unsigned 64bit numbers */
+typedef libssh2_uint64_t SSH2_BYTESU64; /* the same for unsigned 64bit numbers */
 typedef int SSH2_ERROR; /* for returning SSH2 error numbers */
 typedef int SSH2_NERROR; /* for converting SSH2 error code to boolean just indicating success or failure */
 typedef int SSH2_BOOL; /* for yes/no responses */
@@ -262,6 +263,7 @@ LIBSSH2_FREE_FUNC(local_free) {
 }
 
 #define SV2TYPE(sv, type) ((type)((sizeof(IV) < sizeof(type)) ? SvNV(sv) : SvIV(sv)))
+#define SV2UTYPE(sv, type) ((type)((sizeof(IV) < sizeof(type)) ? SvNV(sv) : SvUV(sv)))
 
 static void
 wrap_tied_into(SV *to, const char *pkg, void *object) {
@@ -1382,23 +1384,17 @@ CODE:
 #endif
 
 SSH2_CHANNEL*
-net_ss_channel(SSH2* ss, SV* channel_type = NULL,                \
-               int window_size = LIBSSH2_CHANNEL_WINDOW_DEFAULT, \
+net_ss_channel(SSH2* ss,  SSH2_CHARP_OR_NULL channel_type = NULL,   \
+               int window_size = LIBSSH2_CHANNEL_WINDOW_DEFAULT,    \
                int packet_size = LIBSSH2_CHANNEL_PACKET_DEFAULT)
 PREINIT:
-    const char* pv_channel_type;
-    STRLEN len_channel_type;
+    static const char mandatory_type[] = "session";
 CODE:
-    if (channel_type)
-        pv_channel_type = SvPVbyte(channel_type, len_channel_type);
-    else {
-        pv_channel_type = "session";
-        len_channel_type = 7;
-    }
-
+    if (channel_type && strcmp(channel_type, mandatory_type))
+        Perl_croak(aTHX_ "channel_type must be 'session' ('%s' given)", channel_type);
     NEW_CHANNEL(libssh2_channel_open_ex(ss->session,
-     pv_channel_type, len_channel_type, window_size, packet_size,
-     NULL/*message*/, 0/*message_len*/));
+        mandatory_type, strlen(mandatory_type), window_size, packet_size,
+        NULL/*message*/, 0/*message_len*/));
 OUTPUT:
     RETVAL
 
@@ -1445,7 +1441,7 @@ OUTPUT:
 #if LIBSSH2_VERSION_NUM >= 0x10206
 
 SSH2_CHANNEL*
-net_ss__scp_put(SSH2* ss, SSH2_CHARP path, int mode, SSH2_BYTES64 size, \
+net_ss__scp_put(SSH2* ss, SSH2_CHARP path, int mode, SSH2_BYTESU64 size, \
                 time_t mtime = 0, time_t atime = 0)
 CODE:
     NEW_CHANNEL(libssh2_scp_send64(ss->session,
@@ -1833,6 +1829,7 @@ CODE:
                 count = LIBSSH2_ERROR_EAGAIN;
             }
             if ((count != LIBSSH2_ERROR_EAGAIN) || !blocking) break;
+
         }
     }
     debug("- read %d total\n", total);
@@ -1846,6 +1843,7 @@ CODE:
     else {
         SvOK_off(buffer);
         SvSETMAGIC(buffer);
+        save_eagain(ch->ss->session, count);
         RETVAL = count;
     }
 OUTPUT:
@@ -1881,8 +1879,7 @@ CODE:
     if (offset || (count == 0)) /* yes, zero is a valid value */
         RETVAL = offset;
     else {
-        if (count == LIBSSH2_ERROR_EAGAIN)
-            libssh2_session_set_last_error(ch->ss->session, LIBSSH2_ERROR_EAGAIN, "Operation would block");
+        save_eagain(ch->ss->session, count);
         RETVAL = -1;
     }
 OUTPUT:
