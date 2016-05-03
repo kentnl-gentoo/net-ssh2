@@ -35,7 +35,8 @@ sub READLINE {
     }
     
     my ($line, $eol, $c) = ('', $/);
-    $line .= $c while $line !~ /\Q$eol\E$/ and defined($c = $self->GETC);
+    $line .= $c while ( (not defined $eol or $line !~ /\Q$eol\E$/)
+                        and defined($c = $self->GETC) );
     length($line) ? $line : undef
 }
 
@@ -46,22 +47,19 @@ sub GETC {
 }
 
 sub READ {
-    my ($self, $rbuf, $len, $offset) = @_;
-    my ($tmp, $count);
-    return unless defined($count = $self->read($tmp, $len));
-    substr($$rbuf, $offset) = $tmp;
-    $count
+    my ($self, undef, $len, $offset) = @_;
+    my $bytes = $self->read(my($buffer), $len);
+    substr($_[1], $offset || 0) = $buffer
+        if defined $bytes;
+    return $bytes;
 }
 
 sub CLOSE {
 }
 
-sub BINMODE {
-}
+sub BINMODE { 1 }
 
-sub EOF {
-    0
-}
+sub EOF { 0 }
 
 1;
 __END__
