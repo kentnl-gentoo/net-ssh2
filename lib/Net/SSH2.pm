@@ -1,6 +1,6 @@
 package Net::SSH2;
 
-our $VERSION = '0.59_21';
+our $VERSION = '0.59_22';
 
 use 5.006;
 use strict;
@@ -66,7 +66,7 @@ my $connect_fd_warned;
 my $connect_void_warned;
 sub connect {
     my $self = shift;
-    croak "Net::SSH2::connect: not enough parameters" if @_ < 1;
+    defined $_[0] or croak "Net::SSH2::connect: hostname argument is undefined";
 
     # try to connect, or get a file descriptor
     my ($fd, $sock);
@@ -96,7 +96,6 @@ sub connect {
 
     my ($hostname, $port);
     if (@_ == 2) {
-
         $hostname = $_[0];
         $port = getservbyname($_[1] || 'ssh', 'tcp') || 22;
         my $timeout = $self->timeout;
@@ -201,12 +200,27 @@ sub _auth_rank {
     return grep { $_ ne 'agent' } @$rank;
 }
 
+sub _local_user {
+    for (qw(USER LOGNAME)) {
+        return $ENV{$_} if defined $ENV{$_}
+    }
+
+    local ($@, $SIG{__DIE__}, $SIG{__WARN__});
+
+    my $u = eval { getlogin };
+    return $u if defined $u;
+
+    eval { getpwuid $< }
+}
+
 my $password_when_you_mean_passphrase_warned;
 sub auth {
     my ($self, %p) = @_;
 
     $self->_set_error(LIBSSH2_ERROR_AUTHENTICATION_FAILED(),
                       "Authentication failed"); # default error
+
+    $p{username} = _local_user unless defined $p{username};
 
     my @rank = $self->_auth_rank(delete $p{rank});
     my $remote_rank;
@@ -1397,8 +1411,8 @@ Returns undef on error, or the number of active objects.
 Get the blocked direction after some method returns
 C<LIBSSH2_ERROR_EAGAIN>.
 
-Returns C<LIBSSH2_SOCKET_BLOCK_INBOUND> or
-C<LIBSSH2_SOCKET_BLOCK_OUTBOUND>.
+Returns C<LIBSSH2_SESSION_BLOCK_INBOUND> or/and
+C<LIBSSH2_SESSION_BLOCK_OUTBOUND>.
 
 =head2 debug ( state )
 

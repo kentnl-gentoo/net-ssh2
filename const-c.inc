@@ -901,23 +901,13 @@ constant_24 (pTHX_ const char *name, IV *iv_return) {
      here.  However, subsequent manual editing may have added or removed some.
      LIBSSH2_FX_DIR_NOT_EMPTY LIBSSH2_FX_LOCK_CONFlICT LIBSSH2_FX_NO_CONNECTION
      LIBSSH2_FX_WRITE_PROTECT LIBSSH2_HOSTKEY_HASH_MD5 LIBSSH2_PACKET_MAXDECOMP
-     LIBSSH2_SFTP_ATTR_UIDGID LIBSSH2_SFTP_TYPE_SOCKET */
-  /* Offset 16 gives the best switch position.  */
-  switch (name[16]) {
-  case 'A':
-    if (memEQ(name, "LIBSSH2_PACKET_MAXDECOMP", 24)) {
-    /*                               ^              */
-#ifdef LIBSSH2_PACKET_MAXDECOMP
-      *iv_return = LIBSSH2_PACKET_MAXDECOMP;
-      return PERL_constant_ISIV;
-#else
-      return PERL_constant_NOTDEF;
-#endif
-    }
-    break;
+     LIBSSH2_SFTP_ATTR_UIDGID LIBSSH2_SFTP_TYPE_SOCKET SSH_EXTENDED_DATA_STDERR
+     */
+  /* Offset 22 gives the best switch position.  */
+  switch (name[22]) {
   case 'C':
     if (memEQ(name, "LIBSSH2_FX_LOCK_CONFlICT", 24)) {
-    /*                               ^              */
+    /*                                     ^        */
 #ifdef LIBSSH2_FX_LOCK_CONFlICT
       *iv_return = LIBSSH2_FX_LOCK_CONFlICT;
       return PERL_constant_ISIV;
@@ -925,21 +915,19 @@ constant_24 (pTHX_ const char *name, IV *iv_return) {
       return PERL_constant_NOTDEF;
 #endif
     }
-    break;
-  case 'E':
-    if (memEQ(name, "LIBSSH2_SFTP_TYPE_SOCKET", 24)) {
-    /*                               ^              */
-#ifdef LIBSSH2_SFTP_TYPE_SOCKET
-      *iv_return = LIBSSH2_SFTP_TYPE_SOCKET;
+    if (memEQ(name, "LIBSSH2_FX_WRITE_PROTECT", 24)) {
+    /*                                     ^        */
+#ifdef LIBSSH2_FX_WRITE_PROTECT
+      *iv_return = LIBSSH2_FX_WRITE_PROTECT;
       return PERL_constant_ISIV;
 #else
       return PERL_constant_NOTDEF;
 #endif
     }
     break;
-  case 'H':
+  case 'D':
     if (memEQ(name, "LIBSSH2_HOSTKEY_HASH_MD5", 24)) {
-    /*                               ^              */
+    /*                                     ^        */
 #ifdef LIBSSH2_HOSTKEY_HASH_MD5
       *iv_return = LIBSSH2_HOSTKEY_HASH_MD5;
       return PERL_constant_ISIV;
@@ -948,31 +936,20 @@ constant_24 (pTHX_ const char *name, IV *iv_return) {
 #endif
     }
     break;
-  case 'N':
-    if (memEQ(name, "LIBSSH2_FX_NO_CONNECTION", 24)) {
-    /*                               ^              */
-#ifdef LIBSSH2_FX_NO_CONNECTION
-      *iv_return = LIBSSH2_FX_NO_CONNECTION;
+  case 'E':
+    if (memEQ(name, "LIBSSH2_SFTP_TYPE_SOCKET", 24)) {
+    /*                                     ^        */
+#ifdef LIBSSH2_SFTP_TYPE_SOCKET
+      *iv_return = LIBSSH2_SFTP_TYPE_SOCKET;
       return PERL_constant_ISIV;
 #else
       return PERL_constant_NOTDEF;
 #endif
     }
     break;
-  case 'O':
-    if (memEQ(name, "LIBSSH2_FX_DIR_NOT_EMPTY", 24)) {
-    /*                               ^              */
-#ifdef LIBSSH2_FX_DIR_NOT_EMPTY
-      *iv_return = LIBSSH2_FX_DIR_NOT_EMPTY;
-      return PERL_constant_ISIV;
-#else
-      return PERL_constant_NOTDEF;
-#endif
-    }
-    break;
-  case 'R':
+  case 'I':
     if (memEQ(name, "LIBSSH2_SFTP_ATTR_UIDGID", 24)) {
-    /*                               ^              */
+    /*                                     ^        */
 #ifdef LIBSSH2_SFTP_ATTR_UIDGID
       *iv_return = LIBSSH2_SFTP_ATTR_UIDGID;
       return PERL_constant_ISIV;
@@ -981,11 +958,44 @@ constant_24 (pTHX_ const char *name, IV *iv_return) {
 #endif
     }
     break;
-  case '_':
-    if (memEQ(name, "LIBSSH2_FX_WRITE_PROTECT", 24)) {
-    /*                               ^              */
-#ifdef LIBSSH2_FX_WRITE_PROTECT
-      *iv_return = LIBSSH2_FX_WRITE_PROTECT;
+  case 'M':
+    if (memEQ(name, "LIBSSH2_PACKET_MAXDECOMP", 24)) {
+    /*                                     ^        */
+#ifdef LIBSSH2_PACKET_MAXDECOMP
+      *iv_return = LIBSSH2_PACKET_MAXDECOMP;
+      return PERL_constant_ISIV;
+#else
+      return PERL_constant_NOTDEF;
+#endif
+    }
+    break;
+  case 'O':
+    if (memEQ(name, "LIBSSH2_FX_NO_CONNECTION", 24)) {
+    /*                                     ^        */
+#ifdef LIBSSH2_FX_NO_CONNECTION
+      *iv_return = LIBSSH2_FX_NO_CONNECTION;
+      return PERL_constant_ISIV;
+#else
+      return PERL_constant_NOTDEF;
+#endif
+    }
+    break;
+  case 'R':
+    if (memEQ(name, "SSH_EXTENDED_DATA_STDERR", 24)) {
+    /*                                     ^        */
+#ifdef SSH_EXTENDED_DATA_STDERR
+      *iv_return = SSH_EXTENDED_DATA_STDERR;
+      return PERL_constant_ISIV;
+#else
+      return PERL_constant_NOTDEF;
+#endif
+    }
+    break;
+  case 'T':
+    if (memEQ(name, "LIBSSH2_FX_DIR_NOT_EMPTY", 24)) {
+    /*                                     ^        */
+#ifdef LIBSSH2_FX_DIR_NOT_EMPTY
+      *iv_return = LIBSSH2_FX_DIR_NOT_EMPTY;
       return PERL_constant_ISIV;
 #else
       return PERL_constant_NOTDEF;
@@ -1496,12 +1506,23 @@ constant_28 (pTHX_ const char *name, IV *iv_return) {
      here.  However, subsequent manual editing may have added or removed some.
      LIBSSH2_CHANNEL_FLUSH_STDERR LIBSSH2_ERROR_CHANNEL_CLOSED
      LIBSSH2_ERROR_REQUEST_DENIED LIBSSH2_ERROR_SOCKET_TIMEOUT
-     LIBSSH2_FX_PERMISSION_DENIED LIBSSH2_FX_UNKNOWN_PRINCIPLE
-     LIBSSH2_KNOWNHOST_KEYENC_RAW LIBSSH2_KNOWNHOST_KEY_SSHDSS
-     LIBSSH2_KNOWNHOST_KEY_SSHRSA LIBSSH2_KNOWNHOST_TYPE_PLAIN
-     LIBSSH2_SOCKET_POLL_MAXLOOPS */
+     LIBSSH2_EXTENDED_DATA_STDERR LIBSSH2_FX_PERMISSION_DENIED
+     LIBSSH2_FX_UNKNOWN_PRINCIPLE LIBSSH2_KNOWNHOST_KEYENC_RAW
+     LIBSSH2_KNOWNHOST_KEY_SSHDSS LIBSSH2_KNOWNHOST_KEY_SSHRSA
+     LIBSSH2_KNOWNHOST_TYPE_PLAIN LIBSSH2_SOCKET_POLL_MAXLOOPS */
   /* Offset 20 gives the best switch position.  */
   switch (name[20]) {
+  case 'A':
+    if (memEQ(name, "LIBSSH2_EXTENDED_DATA_STDERR", 28)) {
+    /*                                   ^              */
+#ifdef LIBSSH2_EXTENDED_DATA_STDERR
+      *iv_return = LIBSSH2_EXTENDED_DATA_STDERR;
+      return PERL_constant_ISIV;
+#else
+      return PERL_constant_NOTDEF;
+#endif
+    }
+    break;
   case 'H':
     if (memEQ(name, "LIBSSH2_CHANNEL_FLUSH_STDERR", 28)) {
     /*                                   ^              */
@@ -2187,7 +2208,8 @@ my @names = (qw(LIBSSH2_CALLBACK_DEBUG LIBSSH2_CALLBACK_DISCONNECT
 	       LIBSSH2_ERROR_SCP_PROTOCOL LIBSSH2_ERROR_SFTP_PROTOCOL
 	       LIBSSH2_ERROR_SOCKET_DISCONNECT LIBSSH2_ERROR_SOCKET_NONE
 	       LIBSSH2_ERROR_SOCKET_SEND LIBSSH2_ERROR_SOCKET_TIMEOUT
-	       LIBSSH2_ERROR_TIMEOUT LIBSSH2_ERROR_ZLIB LIBSSH2_FLAG_COMPRESS
+	       LIBSSH2_ERROR_TIMEOUT LIBSSH2_ERROR_ZLIB
+	       LIBSSH2_EXTENDED_DATA_STDERR LIBSSH2_FLAG_COMPRESS
 	       LIBSSH2_FLAG_SIGPIPE LIBSSH2_FXF_APPEND LIBSSH2_FXF_CREAT
 	       LIBSSH2_FXF_EXCL LIBSSH2_FXF_READ LIBSSH2_FXF_TRUNC
 	       LIBSSH2_FXF_WRITE LIBSSH2_FX_BAD_MESSAGE
@@ -2243,7 +2265,7 @@ my @names = (qw(LIBSSH2_CALLBACK_DEBUG LIBSSH2_CALLBACK_DISCONNECT
 	       LIBSSH2_TERM_WIDTH_PX LIBSSH2_TRACE_AUTH LIBSSH2_TRACE_CONN
 	       LIBSSH2_TRACE_ERROR LIBSSH2_TRACE_KEX LIBSSH2_TRACE_PUBLICKEY
 	       LIBSSH2_TRACE_SCP LIBSSH2_TRACE_SFTP LIBSSH2_TRACE_SOCKET
-	       LIBSSH2_TRACE_TRANS));
+	       LIBSSH2_TRACE_TRANS SSH_EXTENDED_DATA_STDERR));
 
 print constant_types(), "\n"; # macro defs
 foreach (C_constant ("Net::SSH2", 'constant', 'IV', $types, undef, 3, @names) ) {
