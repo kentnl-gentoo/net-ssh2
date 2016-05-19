@@ -73,11 +73,13 @@ sub read2 {
                 }
             }
         }
-        if ($bytes or $self->eof) {
+        if ($bytes) {
             $ssh2->blocking($old_blocking);
             return (wantarray ? @out : $out[0])
         }
-        if ($fail) {
+        my $eof = $self->eof;
+        if ($fail or $eof) {
+            $ssh2->_set_error if $eof;
             $ssh2->blocking($old_blocking);
             return;
         }
@@ -87,7 +89,7 @@ sub read2 {
                 $ssh2->_set_error(Net::SSH2::LIBSSH2_ERROR_TIMEOUT(), "Time out waiting for data");
                 return;
             }
-            return if time > $deadline;
+            return if $deadline and time > $deadline;
             my $sock = $ssh2->sock;
             my $fn = fileno($sock);
             my ($rbm, $wbm) = ('', '');
