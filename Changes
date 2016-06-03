@@ -1,7 +1,11 @@
 Revision history for Perl extension Net::SSH2.
 
+0.61  2016-06-03
+        - auth method was skipping agent authentication always (bug
+          report and patch by NIkolay A. Fetisov).
+
 0.60  2016-05-23
-        - Fix connecting to a custom port (bug report by Ferenc Erki).
+        - Fix connecting to a custom port (bug report by Jan Gehring).
 
 0.59_23  2016-05-19
         - Fix handling of eof in Channel read2 method.

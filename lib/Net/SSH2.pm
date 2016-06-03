@@ -1,6 +1,6 @@
 package Net::SSH2;
 
-our $VERSION = '0.60';
+our $VERSION = '0.61';
 
 use 5.006;
 use strict;
@@ -157,7 +157,7 @@ sub connect {
 sub _auth_methods {
     return {
         'agent' => {
-            ssh => 'agent',
+            ssh => 'publickey',
             method => \&auth_agent,
             params => [qw(_fallback username)],
         },
