@@ -7,10 +7,10 @@ use Carp;
 sub die_with_error {
     my $self = shift;
     if (my ($code, $name) = $self->error) {
-        die join(": ", @_, "SFTP error $code $name");
+        croak join(": ", @_, "SFTP error $code $name");
     }
     else {
-        die join(": ", @_, "no SFTP error registered");
+        croak join(": ", @_, "no SFTP error registered");
     }
 }
 
@@ -42,7 +42,7 @@ object appended.
 Open or create a file on the remote host.  The flags are the standard O_RDONLY,
 O_WRONLY, O_RDWR, O_APPEND, O_CREAT, O_TRUNC, and O_EXCL, which may be
 combined as usual.  Flags default to O_RDONLY and mode to 0666 (create only).
-Returns a Net::SSH2::File object on success.
+Returns a L<Net::SSH2::File> object on success.
 
 =head2 opendir ( dir )
 

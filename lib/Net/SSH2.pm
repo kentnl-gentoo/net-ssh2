@@ -1,6 +1,6 @@
 package Net::SSH2;
 
-our $VERSION = '0.62';
+our $VERSION = '0.63';
 
 use 5.006;
 use strict;
@@ -48,10 +48,10 @@ sub new {
 sub die_with_error {
     my $self = shift;
     if (my ($code, $name, $string) = $self->error) {
-        die join(": ", @_, "$string ($code $name)");
+        croak join(": ", @_, "$string ($code $name)");
     }
     else {
-        die join(": ", @_, "no libssh2 error registered");
+        croak join(": ", @_, "no libssh2 error registered");
     }
 }
 
@@ -83,7 +83,7 @@ sub connect {
         }
     }
 
-    my %opts = splice @_, 2;
+    my %opts = (@_ > 2 ? splice(@_, 2) : ());
     if (%opts) {
         $connect_opts_warned++ or
             warnings::warnif($self, "Passing options to connect is deprecated");
@@ -136,9 +136,9 @@ sub connect {
 
     {
         local ($@, $SIG{__DIE__});
-        $port = eval { $sock->peerport }
+        $port = eval { $sock->peerport } || 22
             unless defined $port;
-        $hostname = eval { $sock->peername } || 22
+        $hostname = eval { $sock->peername }
             unless defined $hostname;
     }
 
@@ -403,7 +403,7 @@ sub check_hostkey {
             if ($policy == LIBSSH2_HOSTKEY_POLICY_ASK()) {
                 my $fp = unpack 'H*', $self->hostkey_hash(LIBSSH2_HOSTKEY_HASH_SHA1());
                 my $yes = $self->_ask_user("The authenticity of host '$hostname' can't be established.\n" .
-                                           "key fingerprint is SHA1:$fp.\n" .
+                                           "Key fingerprint is SHA1:$fp.\n" .
                                            "Are you sure you want to continue connecting (yes/no)? ", 1);
                 unless ($yes =~ /^y(es)?$/i) {
                     $self->_set_error(LIBSSH2_ERROR_KNOWN_HOSTS(), 'Host key verification failed: user did not accept the key');
