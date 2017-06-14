@@ -1,6 +1,6 @@
 package Net::SSH2;
 
-our $VERSION = '0.63';
+our $VERSION = '0.64';
 
 use 5.006;
 use strict;
@@ -34,7 +34,7 @@ sub new {
     my ($class, %opts) = @_;
     my $self = $class->_new;
 
-    for (qw(trace timeout)) {
+    for (qw(trace timeout debug)) {
         $self->$_($opts{$_}) if defined $opts{$_}
     }
     $self->flag(COMPRESS => $opts{compress})
@@ -147,9 +147,11 @@ sub connect {
 
  error:
     unless (defined wantarray) {
-        $connect_void_warned++ or
+        unless ($connect_void_warned++) {
+            local $!;
             warnings::warnif($self, "Calling connect in void context is deprecated");
-        croak "Net::SSH2: failed to connect to $_[0]:$_[1]: $!"
+        }
+        croak "Net::SSH2: failed to connect to ". join(':', grep defined, @_[0,1]) .": $!";
     }
     return;
 }
@@ -788,6 +790,9 @@ Example:
 
 Note that tracing requires a version of libssh2 compiled with debugging support.
 
+=item debug
+
+Enable debugging. See L</debug>.
 
 =item compress
 
@@ -1466,7 +1471,7 @@ Copyright (C) 2005 - 2010 by David B. Robins (dbrobins@cpan.org).
 
 Copyright (C) 2010 - 2016 by Rafael Kitover (rkitover@cpan.org).
 
-Copyright (C) 2011 - 2016 by Salvador FandiE<ntilde>o (salva@cpan.org).
+Copyright (C) 2011 - 2017 by Salvador FandiE<ntilde>o (salva@cpan.org).
 
 All rights reserved.
 
