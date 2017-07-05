@@ -1,3 +1,4 @@
+use lib q[.];
 use inc::Module::Install 0.91;
 use Cwd;
 use Config;
